@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import pRetry from "p-retry";
 import { ProviderAdapter, ProviderResponse, ProviderContext, ParsedCitation } from "./types";
 import { buildAnswerSystemPrompt } from "../templates/llm-prompts";
 
@@ -53,14 +54,36 @@ export class OpenAIAdapter implements ProviderAdapter {
   async runPrompt(promptText: string, context?: ProviderContext): Promise<ProviderResponse> {
     const systemPrompt = buildAnswerSystemPrompt(context?.brandNames, context?.competitorNames);
 
-    const response = await openai.chat.completions.create({
-      model: this.model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: promptText },
-      ],
-      max_completion_tokens: 4096,
-    });
+    // Wrap API call with retry logic for transient failures
+    const response = await pRetry(
+      async () => {
+        return await openai.chat.completions.create({
+          model: this.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: promptText },
+          ],
+          max_completion_tokens: 4096,
+        });
+      },
+      {
+        retries: 1, // 1 retry = 2 total attempts
+        minTimeout: 1000, // 1 second before retry
+        maxTimeout: 2000, // 2 seconds max backoff
+        onFailedAttempt: (error) => {
+          console.warn(
+            `OpenAI API call failed (attempt ${error.attemptNumber}/${error.retriesLeft + error.attemptNumber})`
+          );
+        },
+        // Only retry on specific transient errors
+        shouldRetry: (error: any) => {
+          // Retry on rate limits, server errors, and timeout
+          const retryableStatusCodes = [429, 500, 502, 503, 504];
+          const statusCode = error?.response?.status || error?.status;
+          return retryableStatusCodes.includes(statusCode);
+        },
+      }
+    );
 
     const rawText = response.choices[0]?.message?.content || "";
     const citations = extractUrlsFromText(rawText);

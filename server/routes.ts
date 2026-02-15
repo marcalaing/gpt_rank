@@ -2,6 +2,8 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import session from "express-session";
 import bcrypt from "bcryptjs";
+import rateLimit from "express-rate-limit";
+import pRetry from "p-retry";
 import { storage } from "./storage";
 import { registerSchema, loginSchema, insertProjectSchema, insertBrandSchema, insertCompetitorSchema, insertPromptSchema, freeSearchSchema, insertAlertRuleSchema } from "@shared/schema";
 import { z } from "zod";
@@ -17,15 +19,39 @@ const budgetUpdateSchema = z.object({
 declare module "express-session" {
   interface SessionData {
     userId?: string;
+    userVerified?: boolean; // Cache flag to avoid repeated DB lookups
   }
 }
 
-// Auth middleware
-function requireAuth(req: Request, res: Response, next: NextFunction) {
+// Auth middleware - validates session and checks user exists in DB
+async function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
     return res.status(401).json({ error: "Unauthorized" });
   }
-  next();
+
+  // If user was already verified this session, skip DB lookup
+  if (req.session.userVerified) {
+    return next();
+  }
+
+  // Verify user still exists in database
+  try {
+    const user = await storage.getUser(req.session.userId);
+    if (!user) {
+      // User was deleted but session is still valid
+      req.session.destroy((err) => {
+        if (err) console.error("Error destroying session:", err);
+      });
+      return res.status(401).json({ error: "User not found" });
+    }
+
+    // Cache verification for this session to avoid repeated DB hits
+    req.session.userVerified = true;
+    next();
+  } catch (error) {
+    console.error("Error verifying user in auth middleware:", error);
+    return res.status(500).json({ error: "Authentication error" });
+  }
 }
 
 // Helper to verify project belongs to user's organization
@@ -44,9 +70,12 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   // Session middleware
+  if (!process.env.SESSION_SECRET) {
+    throw new Error("SESSION_SECRET environment variable is required for security. Generate one with: openssl rand -base64 32");
+  }
   app.use(
     session({
-      secret: process.env.SESSION_SECRET || "gpt-rank-secret-key",
+      secret: process.env.SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
       cookie: {
@@ -57,13 +86,47 @@ export async function registerRoutes(
     })
   );
 
+  // Rate limiters
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5, // 5 attempts per window
+    message: { error: "Too many authentication attempts, please try again later" },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  const apiLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 100, // 100 requests per minute per IP
+    message: { error: "Too many requests, please slow down" },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  const freeSearchLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 10, // 10 free searches per hour
+    message: { error: "Free search limit reached. Please try again later or sign up for unlimited searches." },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  // Apply general API rate limiter to all API routes (except auth which has stricter limits)
+  app.use("/api", (req, res, next) => {
+    // Skip rate limiting for auth routes (they have their own stricter limiter)
+    if (req.path.startsWith("/auth/")) {
+      return next();
+    }
+    return apiLimiter(req, res, next);
+  });
+
   // Health check
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
   // Free brand visibility search (public endpoint) - Uses real AI
-  app.post("/api/free-search", async (req, res) => {
+  app.post("/api/free-search", freeSearchLimiter, async (req, res) => {
     try {
       const data = freeSearchSchema.parse(req.body);
       const { brandName, prompt, domain } = data;
@@ -80,16 +143,27 @@ export async function registerRoutes(
 When mentioning brands, companies, or products, be specific and name them explicitly.
 If you know of relevant sources or websites, include them as citations at the end of your response.`;
       
-      // Query AI with the user's prompt
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: prompt },
-        ],
-        max_tokens: 1000,
-        temperature: 0.7,
-      });
+      // Query AI with the user's prompt (with retry logic)
+      const completion = await pRetry(
+        async () => {
+          return await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: prompt },
+            ],
+            max_tokens: 1000,
+            temperature: 0.7,
+          });
+        },
+        {
+          retries: 1,
+          minTimeout: 1000,
+          onFailedAttempt: (error) => {
+            console.warn(`Free search OpenAI call failed (attempt ${error.attemptNumber})`);
+          },
+        }
+      );
       
       const aiResponse = completion.choices[0]?.message?.content || "";
       
@@ -216,7 +290,7 @@ If you know of relevant sources or websites, include them as citations at the en
   });
 
   // Auth routes
-  app.post("/api/auth/register", async (req, res) => {
+  app.post("/api/auth/register", authLimiter, async (req, res) => {
     try {
       const data = registerSchema.parse(req.body);
       
@@ -260,7 +334,7 @@ If you know of relevant sources or websites, include them as citations at the en
     }
   });
 
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", authLimiter, async (req, res) => {
     try {
       const data = loginSchema.parse(req.body);
       

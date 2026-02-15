@@ -129,7 +129,8 @@ export async function processJobs(limit: number = MAX_JOBS_PER_TICK): Promise<Pr
       }
 
       await storage.updateJobStatus(job.id, "running");
-      currentAttempts = await storage.incrementJobAttempts(job.id);
+      await storage.incrementJobAttempts(job.id);
+      currentAttempts = (job.attempts || 0) + 1;
 
       if (job.type === "prompt_run") {
         const payload = job.payload as { promptId: string; provider: string; model?: string };

@@ -1,4 +1,4 @@
-import { getUncachableStripeClient } from "./stripeClient";
+import { getStripeClient } from "./stripeClient";
 import Stripe from "stripe";
 
 interface PlanConfig {
@@ -72,7 +72,7 @@ const PLANS: PlanConfig[] = [
 ];
 
 async function seedProducts() {
-  const stripe = await getUncachableStripeClient();
+  const stripe = getStripeClient();
   console.log("Seeding Stripe products...");
 
   for (const plan of PLANS) {

@@ -15,49 +15,24 @@ declare module "http" {
 import { setStripeAvailable, isStripeAvailable } from "./stripeStatus";
 
 async function initStripe() {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    console.warn("DATABASE_URL not set, skipping Stripe initialization");
-    return;
-  }
-
   try {
-    const { runMigrations } = await import("stripe-replit-sync");
-    const { getStripeSync } = await import("./stripeClient");
-
-    console.log("Initializing Stripe schema...");
-    await runMigrations({ databaseUrl });
-    console.log("Stripe schema ready");
-
-    const stripeSync = await getStripeSync();
-
-    const replitDomains = process.env.REPLIT_DOMAINS?.split(",")[0];
-    if (replitDomains) {
-      console.log("Setting up managed webhook...");
-      const webhookBaseUrl = `https://${replitDomains}`;
-      try {
-        const result = await stripeSync.findOrCreateManagedWebhook(
-          `${webhookBaseUrl}/api/stripe/webhook`
-        );
-        if (result?.webhook?.url) {
-          console.log(`Webhook configured: ${result.webhook.url}`);
-        } else {
-          console.log("Webhook setup completed (url not returned)");
-        }
-      } catch (webhookError) {
-        console.warn("Webhook setup skipped:", webhookError);
-      }
+    const { getStripeClient } = await import("./stripeClient");
+    
+    // Test Stripe connection by retrieving account info
+    const stripe = getStripeClient();
+    const account = await stripe.accounts.retrieve();
+    
+    console.log(`Stripe initialized successfully (Account: ${account.id})`);
+    
+    // Log webhook endpoint info if configured
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      console.log("Stripe webhook secret configured");
+    } else {
+      console.warn("STRIPE_WEBHOOK_SECRET not set - webhook signature verification will fail");
     }
-
-    console.log("Syncing Stripe data...");
-    stripeSync.syncBackfill().then(() => {
-      console.log("Stripe data synced");
-    }).catch((err: Error) => {
-      console.error("Error syncing Stripe data:", err);
-    });
-
+    
     setStripeAvailable(true);
-    console.log("Stripe initialized successfully");
   } catch (error) {
     console.warn("Stripe not available - billing features disabled. Reason:", (error as Error).message);
     setStripeAvailable(false);
@@ -79,18 +54,34 @@ app.post(
       return res.status(400).json({ error: "Missing stripe-signature" });
     }
 
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      console.error("STRIPE_WEBHOOK_SECRET not configured");
+      return res.status(500).json({ error: "Webhook secret not configured" });
+    }
+
     try {
+      const { getStripeClient } = await import("./stripeClient");
       const { WebhookHandlers } = await import("./webhookHandlers");
+      
       const sig = Array.isArray(signature) ? signature[0] : signature;
+      
       if (!Buffer.isBuffer(req.body)) {
         console.error("STRIPE WEBHOOK ERROR: req.body is not a Buffer");
-        return res.status(500).json({ error: "Webhook processing error" });
+        return res.status(400).json({ error: "Invalid request body" });
       }
-      await WebhookHandlers.processWebhook(req.body as Buffer, sig);
+
+      // Verify webhook signature using standard Stripe SDK
+      const stripe = getStripeClient();
+      const event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+      
+      // Process the verified event
+      await WebhookHandlers.processStripeEvent(event);
+      
       res.status(200).json({ received: true });
     } catch (error: any) {
       console.error("Webhook error:", error.message);
-      res.status(400).json({ error: "Webhook processing error" });
+      res.status(400).json({ error: `Webhook processing error: ${error.message}` });
     }
   }
 );
@@ -143,6 +134,10 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Test database connection on startup
+  const { testDatabaseConnection } = await import("./db");
+  await testDatabaseConnection();
+  
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

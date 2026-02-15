@@ -1,10 +1,10 @@
 import { db } from './db';
 import { sql } from 'drizzle-orm';
-import { getUncachableStripeClient } from './stripeClient';
+import { getStripeClient } from './stripeClient';
 
 export class StripeService {
   async createCustomer(email: string, orgId: string, orgName: string) {
-    const stripe = await getUncachableStripeClient();
+    const stripe = getStripeClient();
     return await stripe.customers.create({
       email,
       name: orgName,
@@ -19,7 +19,7 @@ export class StripeService {
     cancelUrl: string,
     metadata?: Record<string, string>
   ) {
-    const stripe = await getUncachableStripeClient();
+    const stripe = getStripeClient();
     return await stripe.checkout.sessions.create({
       customer: customerId,
       payment_method_types: ['card'],
@@ -32,7 +32,7 @@ export class StripeService {
   }
 
   async createCustomerPortalSession(customerId: string, returnUrl: string) {
-    const stripe = await getUncachableStripeClient();
+    const stripe = getStripeClient();
     return await stripe.billingPortal.sessions.create({
       customer: customerId,
       return_url: returnUrl,

@@ -1,60 +1,43 @@
-import { getStripeSync, getUncachableStripeClient } from './stripeClient';
+import { getStripeClient } from './stripeClient';
 import { db } from './db';
 import { organizations } from '@shared/schema';
 import { eq } from 'drizzle-orm';
+import type Stripe from 'stripe';
 
 export class WebhookHandlers {
-  static async processWebhook(payload: Buffer, signature: string): Promise<void> {
-    if (!Buffer.isBuffer(payload)) {
-      throw new Error(
-        'STRIPE WEBHOOK ERROR: Payload must be a Buffer. ' +
-        'Received type: ' + typeof payload + '. ' +
-        'This usually means express.json() parsed the body before reaching this handler. ' +
-        'FIX: Ensure webhook route is registered BEFORE app.use(express.json()).'
-      );
-    }
-
-    const sync = await getStripeSync();
-    const stripe = await getUncachableStripeClient();
-    
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-    if (!webhookSecret) {
-      await sync.processWebhook(payload, signature);
-      return;
-    }
-    
-    const event = stripe.webhooks.constructEvent(
-      payload,
-      signature,
-      webhookSecret
-    );
-
-    await sync.processWebhook(payload, signature);
+  /**
+   * Process a verified Stripe webhook event
+   * @param event - Stripe event object (already verified)
+   */
+  static async processStripeEvent(event: Stripe.Event): Promise<void> {
+    console.log(`Processing Stripe webhook: ${event.type}`);
 
     switch (event.type) {
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
-        await WebhookHandlers.handleSubscriptionChange(event.data.object);
+        await WebhookHandlers.handleSubscriptionChange(event.data.object as Stripe.Subscription);
         break;
       case 'customer.subscription.deleted':
-        await WebhookHandlers.handleSubscriptionDeleted(event.data.object);
+        await WebhookHandlers.handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
         break;
+      default:
+        console.log(`Unhandled webhook event type: ${event.type}`);
     }
   }
 
-  static async handleSubscriptionChange(subscription: any): Promise<void> {
+  static async handleSubscriptionChange(subscription: Stripe.Subscription): Promise<void> {
     try {
-      const customerId = subscription.customer;
+      const customerId = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id;
       const subscriptionId = subscription.id;
       const status = subscription.status;
       
       const priceId = subscription.items?.data?.[0]?.price?.id;
       if (!priceId) return;
 
-      const stripe = await getUncachableStripeClient();
+      const stripe = getStripeClient();
       const price = await stripe.prices.retrieve(priceId, { expand: ['product'] });
-      const product = price.product as any;
-      const tier = product?.metadata?.tier || 'free';
+      const product = price.product as Stripe.Product;
+      const tier = (product?.metadata?.tier || 'free') as 'free' | 'starter' | 'pro' | 'enterprise';
 
       const [org] = await db.select().from(organizations).where(eq(organizations.stripeCustomerId, customerId));
       
@@ -74,9 +57,9 @@ export class WebhookHandlers {
     }
   }
 
-  static async handleSubscriptionDeleted(subscription: any): Promise<void> {
+  static async handleSubscriptionDeleted(subscription: Stripe.Subscription): Promise<void> {
     try {
-      const customerId = subscription.customer;
+      const customerId = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id;
 
       const [org] = await db.select().from(organizations).where(eq(organizations.stripeCustomerId, customerId));
       
