@@ -1,0 +1,124 @@
+You are a senior SaaS engineer + product-minded FinOps lead. We are building an AI Search Analytics app in Replit (Next.js App Router + TypeScript + Tailwind, Postgres + Prisma). We already have: multi-tenant org/projects, prompts, prompt runs/results, basic provider adapter, dashboard.
+
+TASK: Implement a simple, profitable pricing/usage system based on “Answer Credits” with 2 credit classes:
+1) STANDARD credits (default, low-cost engines)
+2) PREMIUM credits (add-on, expensive engines)
+
+Definitions:
+- 1 credit = 1 prompt run × 1 engine execution.
+- STANDARD is the default for all orgs.
+- PREMIUM is only available if the org’s plan includes premium credits (or premium add-on is enabled).
+
+Non-negotiables:
+- No scraping. Official APIs only.
+- Metering must be deterministic, auditable, and race-condition safe.
+- Enforce limits at scheduler time (skip runs if insufficient credits) and at UI time (disable actions if plan limits reached).
+- Keep it extendable to multiple providers via the existing adapter pattern.
+
+DELIVERABLES (implement end-to-end):
+
+A) PRICING DATA MODEL (Prisma)
+Add these enums/tables:
+- Enum CreditClass: STANDARD | PREMIUM
+
+- Plan:
+  id, name,
+  monthlyPriceCents,
+  includedStandardCredits,
+  includedPremiumCredits,
+  projectLimit,
+  promptLimit,
+  competitorLimit,
+  seatLimit (nullable = unlimited)
+
+- Subscription:
+  orgId, planId,
+  status (trialing/active/past_due/canceled),
+  currentPeriodStart, currentPeriodEnd,
+  isAnnual boolean
+
+- CreditLedger:
+  id, orgId,
+  periodStart, periodEnd,
+  creditClass (STANDARD/PREMIUM),
+  deltaCredits (positive allocations, negative usage),
+  reason (string),
+  refType (string),
+  refId (string),
+  createdAt
+
+- UsageSnapshot:
+  orgId, periodStart, periodEnd,
+  standardUsed, premiumUsed,
+  standardRemaining, premiumRemaining,
+  updatedAt
+
+- EngineCatalog:
+  id, provider, model,
+  defaultCreditClass (STANDARD/PREMIUM),
+  costHintInPer1M, costHintOutPer1M,
+  isDefault boolean
+
+- PromptRun additions:
+  creditClassUsed,
+  creditsCharged,
+  tokenIn, tokenOut,
+  costEstimateCents
+
+Seed:
+- Create 3 plans: Starter/Pro/Scale with included credits and limits.
+- Create a default subscription for the seeded org on Starter.
+- Seed EngineCatalog with at least 1 STANDARD engine and (optionally) 1 PREMIUM engine.
+
+B) CREDIT SERVICES (server-side)
+Implement these functions with Prisma transactions + locking to prevent race conditions:
+- getCurrentPeriod(orgId) -> {start,end}
+- getUsage(orgId, period) -> snapshot (computed from ledger if snapshot missing)
+- allocatePeriodCredits(orgId, period) -> inserts positive ledger entries based on plan included credits (standard + premium)
+- chargeCredits(orgId, period, creditClass, amount, refType, refId) -> atomic:
+    - verify remaining credits >= amount
+    - insert negative ledger entry
+    - update UsageSnapshot
+- hasSufficientCredits(orgId, creditClass, amount) -> boolean
+
+Period behavior:
+- On first run in a new period, auto-allocate included credits (idempotent).
+
+C) ENFORCEMENT (pricing structure)
+1) Run-time enforcement (scheduler / job runner):
+- Before executing a prompt run, decide credit class:
+   - Use EngineCatalog.defaultCreditClass for selected engine.
+   - If PREMIUM engine is selected but org has 0 premium remaining, do not run.
+- If insufficient credits for the chosen class:
+   - do NOT call provider
+   - record a PromptRun with status = "skipped_insufficient_credits"
+   - create an alert event (simple table or reuse existing alerts) noting which class was exhausted.
+
+2) UI enforcement:
+- Billing page: show plan name, period dates, remaining credits by class, used by class.
+- Project settings: show plan limits (projects/prompts/competitors).
+- Disable creating prompts if promptLimit reached; disable creating projects if projectLimit reached; disable adding competitors if competitorLimit reached.
+- Disable choosing PREMIUM engine if org has no premium credits in plan.
+
+D) COST TRACKING (for profitability visibility)
+- When provider returns usage (tokens in/out), store tokenIn/tokenOut on PromptRun.
+- Compute costEstimateCents using EngineCatalog cost hints.
+- Show a simple “Estimated LLM Cost This Period” on billing page = sum(costEstimateCents).
+
+E) ADMIN / DEV TOOLS (minimal)
+- /app/org/billing page: plan, credits remaining, usage, estimated cost, ledger table (filter by class)
+- Dev-only endpoint /api/dev/allocate-credits?orgId=... to allocate credits for current period (guard with NODE_ENV or a shared secret)
+- Dev-only endpoint /api/dev/charge-credits?orgId=...&class=STANDARD&amount=... for testing exhaustion
+- Structured logs on every chargeCredits (orgId, class, amount, ref)
+
+EXECUTION ORDER:
+1) Update Prisma schema + migrations + seed.
+2) Implement credit services (ledger + snapshot + allocation + charging).
+3) Wire into prompt execution pipeline so every successful run charges exactly 1 credit and records tokens/cost.
+4) Wire into scheduler to skip runs when insufficient credits.
+5) Build billing UI + UI enforcement of plan limits.
+
+At the end, add a short README section:
+- “How credits work”
+- “How PREMIUM is enabled”
+- “How to add a new engine (STANDARD vs PREMIUM)”

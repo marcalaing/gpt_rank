@@ -1,0 +1,85 @@
+
+Free trial
+Free trial runs on the most cost efficient models for each provider
+Paid plans allow the users to select from the most recent models
+
+Onboarding / New Brand added
+For each brand that is entered, a first LLM call is made to understand what the brand does, what products or services it offers, and what is its operating geography
+Then, with that context, a second LLM call is made to hypothesize the 5 most searched queries for that brand
+Then, each query is saved and attached to the user’s brand project, and the visibility score workflow is ran
+
+User defined prompt
+From this initial set, the user can delete the prompt proposed and/or add up to 5 prompts on the basic plan, 20 on the pro plan, and 100 on the max plan
+
+Visibility score
+A small info bubble expands when hovered over and shows next to scores, allowing the user to see the methodology and how the brand scored on each criteria
+The competitors mentioned are also listed (explicitely or as source).
+On the Pro and Max plan, there is an option to show the score over time (need storage associated with the account) for the brand. The user can also click to add competitors to the graphs (bubble buttons)
+
+Prompt volume
+For each prompt, give a volume score (1-10). Here’s the methodology
+
+Step A — Use Google Trends as the demand proxy
+For each topic/query:
+Pull Google Trends interest (last 12 months, your target geo).
+
+
+Use the average (or most recent) index 0–100.
+
+
+Convert Trends to a 1–10 score:
+0–10 → 1
+
+
+11–20 → 2
+
+
+21–30 → 3
+
+
+31–40 → 4
+
+
+41–50 → 5
+
+
+51–60 → 6
+
+
+61–70 → 7
+
+
+71–80 → 8
+
+
+81–90 → 9
+
+
+91–100 → 10
+
+
+Step B — Multiply by “AI-likeliness”
+Give each query an AI-likeliness score (1–10):
+10: personalized advice, “best for me”, comparisons, synthesis, multi-step plans, templates, writing tasks
+ 7–9: “how to”, troubleshooting, strategy, “examples of”, “checklist”
+ 4–6: general explanations/definitions, light research
+ 1–3: navigational (“login”, “pricing”), single-fact lookups, ultra-local/store-hours
+Directional Prompt Volume Score (1–10)
+PV = round( TrendsScore × (AI_likeliness/10) )
+ This instantly downranks topics people mostly do in classic search, and upweights “ask-an-assistant” style topics.
+
+
+
+Discover prompts panel
+The user can search for prompts and see traffic. If the user wants, he can add a prompt to any project (pending usage limits)
+
+Recommendation panel
+based on gaps/citations/topics.
+Include a content brief generator
+
+Technical analysis panel
+Crawl content on the brand site and recommend technical improvements to increase visibility score
+
+
+Explainable UI
+Across the analytics, ensure the UI can show the full answer, the exact citation/source, and the metric definition (what counts as a “mention” vs “citation”). 
