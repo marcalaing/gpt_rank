@@ -7,7 +7,7 @@ import { rm, readFile } from "fs/promises";
 const allowlist = [
   "@google/generative-ai",
   "axios",
-  "connect-pg-simple",
+  // connect-pg-simple - REMOVED: depends on pg (native module)
   "cors",
   "date-fns",
   "drizzle-orm",
@@ -23,10 +23,10 @@ const allowlist = [
   "openai",
   "passport",
   "passport-local",
-  "pg",
+  // pg - REMOVED: native PostgreSQL driver with native bindings
   "stripe",
   "uuid",
-  "ws",
+  // ws - REMOVED: native WebSocket module with binary addons
   "xlsx",
   "zod",
   "zod-validation-error",
