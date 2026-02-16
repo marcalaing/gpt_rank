@@ -1,4 +1,4 @@
-import { getStripeSync, getUncachableStripeClient } from './stripeClient';
+import { getUncachableStripeClient } from './stripeClient';
 import { db } from './db';
 import { organizations } from '@shared/schema';
 import { eq } from 'drizzle-orm';
@@ -14,12 +14,15 @@ export class WebhookHandlers {
       );
     }
 
-    const sync = await getStripeSync();
-    const stripe = await getUncachableStripeClient();
+    const stripe = getUncachableStripeClient();
+    if (!stripe) {
+      throw new Error('Stripe not configured');
+    }
     
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
     if (!webhookSecret) {
-      await sync.processWebhook(payload, signature);
+      console.warn('STRIPE_WEBHOOK_SECRET not set - webhook signature verification disabled (INSECURE!)');
+      // In production, you should fail here instead of processing unsigned webhooks
       return;
     }
     
@@ -29,8 +32,6 @@ export class WebhookHandlers {
       webhookSecret
     );
 
-    await sync.processWebhook(payload, signature);
-
     switch (event.type) {
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
@@ -39,6 +40,8 @@ export class WebhookHandlers {
       case 'customer.subscription.deleted':
         await WebhookHandlers.handleSubscriptionDeleted(event.data.object);
         break;
+      default:
+        console.log(`Unhandled webhook event type: ${event.type}`);
     }
   }
 
@@ -49,9 +52,16 @@ export class WebhookHandlers {
       const status = subscription.status;
       
       const priceId = subscription.items?.data?.[0]?.price?.id;
-      if (!priceId) return;
+      if (!priceId) {
+        console.warn('No price ID found in subscription');
+        return;
+      }
 
-      const stripe = await getUncachableStripeClient();
+      const stripe = getUncachableStripeClient();
+      if (!stripe) {
+        throw new Error('Stripe not configured');
+      }
+
       const price = await stripe.prices.retrieve(priceId, { expand: ['product'] });
       const product = price.product as any;
       const tier = product?.metadata?.tier || 'free';
@@ -68,9 +78,12 @@ export class WebhookHandlers {
           .where(eq(organizations.id, org.id));
         
         console.log(`Updated org ${org.id} to tier: ${tier}, status: ${status}`);
+      } else {
+        console.warn(`No organization found for Stripe customer: ${customerId}`);
       }
     } catch (error) {
       console.error('Error handling subscription change:', error);
+      throw error; // Re-throw so Stripe knows the webhook failed
     }
   }
 
@@ -90,9 +103,12 @@ export class WebhookHandlers {
           .where(eq(organizations.id, org.id));
         
         console.log(`Subscription deleted for org ${org.id}, reverted to free tier`);
+      } else {
+        console.warn(`No organization found for Stripe customer: ${customerId}`);
       }
     } catch (error) {
       console.error('Error handling subscription deletion:', error);
+      throw error; // Re-throw so Stripe knows the webhook failed
     }
   }
 }

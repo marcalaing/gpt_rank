@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { waitForDatabase, closeDatabase } from "./db";
 
 const app = express();
 const httpServer = createServer(app);
@@ -25,6 +26,45 @@ process.on('uncaughtException', (error: Error) => {
   // In production, you might want to gracefully shutdown here
   // For now, we log and continue
 });
+
+// Graceful shutdown handler
+async function gracefulShutdown(signal: string): Promise<void> {
+  console.log(`\n${signal} received. Starting graceful shutdown...`);
+  
+  try {
+    // Stop accepting new connections
+    httpServer.close(() => {
+      console.log('HTTP server closed');
+    });
+    
+    // Close database connections
+    await closeDatabase();
+    
+    console.log('Graceful shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during graceful shutdown:', error);
+    process.exit(1);
+  }
+}
+
+// Register shutdown handlers
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+async function runMigrations(): Promise<void> {
+  console.log('Running database migrations...');
+  try {
+    const { migrate } = await import('drizzle-orm/node-postgres/migrator');
+    const { db } = await import('./db');
+    
+    await migrate(db, { migrationsFolder: './migrations' });
+    console.log('Migrations completed successfully');
+  } catch (error) {
+    console.error('Migration failed:', error);
+    throw error;
+  }
+}
 
 async function initStripe() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -64,8 +104,6 @@ async function initStripe() {
     setStripeAvailable(false);
   }
 }
-
-initStripe();
 
 app.post(
   "/api/stripe/webhook",
@@ -144,39 +182,55 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  await registerRoutes(httpServer, app);
+  try {
+    // Step 1: Wait for database to be available
+    console.log('Waiting for database connection...');
+    await waitForDatabase();
+    
+    // Step 2: Run migrations
+    await runMigrations();
+    
+    // Step 3: Initialize Stripe
+    await initStripe();
+    
+    // Step 4: Register routes
+    await registerRoutes(httpServer, app);
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+      const status = err.status || err.statusCode || 500;
+      const message = err.message || "Internal Server Error";
 
-    res.status(status).json({ message });
-    throw err;
-  });
+      res.status(status).json({ message });
+      throw err;
+    });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (process.env.NODE_ENV === "production") {
-    serveStatic(app);
-  } else {
-    const { setupVite } = await import("./vite");
-    await setupVite(httpServer, app);
+    // importantly only setup vite in development and after
+    // setting up all the other routes so the catch-all route
+    // doesn't interfere with the other routes
+    if (process.env.NODE_ENV === "production") {
+      serveStatic(app);
+    } else {
+      const { setupVite } = await import("./vite");
+      await setupVite(httpServer, app);
+    }
+
+    // ALWAYS serve the app on the port specified in the environment variable PORT
+    // Other ports are firewalled. Default to 5000 if not specified.
+    // this serves both the API and the client.
+    // It is the only port that is not firewalled.
+    const port = parseInt(process.env.PORT || "5000", 10);
+    httpServer.listen(
+      {
+        port,
+        host: "0.0.0.0",
+        reusePort: true,
+      },
+      () => {
+        log(`serving on port ${port}`);
+      },
+    );
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
   }
-
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || "5000", 10);
-  httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    },
-    () => {
-      log(`serving on port ${port}`);
-    },
-  );
 })();

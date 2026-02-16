@@ -43,10 +43,15 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Validate SESSION_SECRET in production
+  if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
+    throw new Error('SESSION_SECRET must be set in production');
+  }
+
   // Session middleware
   app.use(
     session({
-      secret: process.env.SESSION_SECRET || "gpt-rank-secret-key",
+      secret: process.env.SESSION_SECRET || "gpt-rank-secret-key-dev-only",
       resave: false,
       saveUninitialized: false,
       cookie: {

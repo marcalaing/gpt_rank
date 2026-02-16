@@ -1,0 +1,13 @@
+# Railway ignore file - don't upload these to Railway
+node_modules/
+.git/
+*.log
+.env
+.env.local
+.DS_Store
+dist/
+.vscode/
+.idea/
+*.md
+design_guidelines.md
+DEPLOYMENT.md
