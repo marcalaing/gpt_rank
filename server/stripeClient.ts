@@ -1,79 +1,80 @@
 import Stripe from 'stripe';
 
-let connectionSettings: any;
+let stripeClient: Stripe | null = null;
 
-async function getCredentials() {
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  const xReplitToken = process.env.REPL_IDENTITY
-    ? 'repl ' + process.env.REPL_IDENTITY
-    : process.env.WEB_REPL_RENEWAL
-      ? 'depl ' + process.env.WEB_REPL_RENEWAL
-      : null;
-
-  if (!xReplitToken) {
-    throw new Error('X_REPLIT_TOKEN not found for repl/depl');
+/**
+ * Initialize Stripe client with standard SDK.
+ * Uses STRIPE_SECRET_KEY environment variable.
+ * If not set, logs a warning and returns null (payments disabled).
+ */
+function initializeStripe(): Stripe | null {
+  if (stripeClient) {
+    return stripeClient;
   }
 
-  const connectorName = 'stripe';
-  const isProduction = process.env.REPLIT_DEPLOYMENT === '1';
-  const targetEnvironment = isProduction ? 'production' : 'development';
-
-  const url = new URL(`https://${hostname}/api/v2/connection`);
-  url.searchParams.set('include_secrets', 'true');
-  url.searchParams.set('connector_names', connectorName);
-  url.searchParams.set('environment', targetEnvironment);
-
-  const response = await fetch(url.toString(), {
-    headers: {
-      'Accept': 'application/json',
-      'X_REPLIT_TOKEN': xReplitToken
-    }
-  });
-
-  const data = await response.json();
+  const secretKey = process.env.STRIPE_SECRET_KEY;
   
-  connectionSettings = data.items?.[0];
-
-  if (!connectionSettings || (!connectionSettings.settings.publishable || !connectionSettings.settings.secret)) {
-    throw new Error(`Stripe ${targetEnvironment} connection not found`);
+  if (!secretKey) {
+    console.warn('STRIPE_SECRET_KEY not set - Stripe features will be disabled');
+    return null;
   }
 
-  return {
-    publishableKey: connectionSettings.settings.publishable,
-    secretKey: connectionSettings.settings.secret,
-  };
-}
-
-export async function getUncachableStripeClient() {
-  const { secretKey } = await getCredentials();
-
-  return new Stripe(secretKey);
-}
-
-export async function getStripePublishableKey() {
-  const { publishableKey } = await getCredentials();
-  return publishableKey;
-}
-
-export async function getStripeSecretKey() {
-  const { secretKey } = await getCredentials();
-  return secretKey;
-}
-
-let stripeSync: any = null;
-
-export async function getStripeSync() {
-  if (!stripeSync) {
-    const { StripeSync } = await import('stripe-replit-sync');
-    const secretKey = await getStripeSecretKey();
-
-    stripeSync = new StripeSync({
-      poolConfig: {
-        connectionString: process.env.DATABASE_URL!,
-        max: 2,
-      },
-      stripeSecretKey: secretKey,
+  try {
+    stripeClient = new Stripe(secretKey, {
+      apiVersion: '2024-12-18.acacia',
     });
+    console.log('Stripe client initialized successfully');
+    return stripeClient;
+  } catch (error) {
+    console.error('Failed to initialize Stripe:', error);
+    return null;
   }
-  return stripeSync;
+}
+
+/**
+ * Get the Stripe client instance.
+ * Returns null if Stripe is not configured.
+ */
+export function getStripeClient(): Stripe | null {
+  return initializeStripe();
+}
+
+/**
+ * Get an uncachable Stripe client (same as cached for standard SDK).
+ */
+export function getUncachableStripeClient(): Stripe | null {
+  return getStripeClient();
+}
+
+/**
+ * Get Stripe publishable key from environment.
+ * Returns null if not configured.
+ */
+export function getStripePublishableKey(): string | null {
+  const key = process.env.STRIPE_PUBLISHABLE_KEY;
+  if (!key) {
+    console.warn('STRIPE_PUBLISHABLE_KEY not set');
+  }
+  return key || null;
+}
+
+/**
+ * Get Stripe secret key from environment.
+ * Returns null if not configured.
+ */
+export function getStripeSecretKey(): string | null {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) {
+    console.warn('STRIPE_SECRET_KEY not set');
+  }
+  return key || null;
+}
+
+/**
+ * Legacy compatibility: returns null (StripeSync no longer used).
+ * Kept for backward compatibility with existing code.
+ */
+export async function getStripeSync(): Promise<null> {
+  console.warn('getStripeSync() called but StripeSync is no longer available (Replit-specific)');
+  return null;
 }

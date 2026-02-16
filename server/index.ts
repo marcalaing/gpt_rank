@@ -14,50 +14,51 @@ declare module "http" {
 
 import { setStripeAvailable, isStripeAvailable } from "./stripeStatus";
 
+// Global error handlers - catch unhandled errors before they crash the app
+process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Log the error but don't crash the process
+});
+
+process.on('uncaughtException', (error: Error) => {
+  console.error('Uncaught Exception:', error);
+  // In production, you might want to gracefully shutdown here
+  // For now, we log and continue
+});
+
 async function initStripe() {
   const databaseUrl = process.env.DATABASE_URL;
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+
+  if (!stripeSecretKey) {
+    console.warn("STRIPE_SECRET_KEY not set - Stripe features will be disabled");
+    setStripeAvailable(false);
+    return;
+  }
+
   if (!databaseUrl) {
-    console.warn("DATABASE_URL not set, skipping Stripe initialization");
+    console.warn("DATABASE_URL not set - skipping Stripe database setup");
+    setStripeAvailable(false);
     return;
   }
 
   try {
-    const { runMigrations } = await import("stripe-replit-sync");
-    const { getStripeSync } = await import("./stripeClient");
+    // Initialize Stripe client (now using standard SDK in stripeClient.ts)
+    const { getStripeClient } = await import("./stripeClient");
+    const stripe = getStripeClient();
 
-    console.log("Initializing Stripe schema...");
-    await runMigrations({ databaseUrl });
-    console.log("Stripe schema ready");
-
-    const stripeSync = await getStripeSync();
-
-    const replitDomains = process.env.REPLIT_DOMAINS?.split(",")[0];
-    if (replitDomains) {
-      console.log("Setting up managed webhook...");
-      const webhookBaseUrl = `https://${replitDomains}`;
-      try {
-        const result = await stripeSync.findOrCreateManagedWebhook(
-          `${webhookBaseUrl}/api/stripe/webhook`
-        );
-        if (result?.webhook?.url) {
-          console.log(`Webhook configured: ${result.webhook.url}`);
-        } else {
-          console.log("Webhook setup completed (url not returned)");
-        }
-      } catch (webhookError) {
-        console.warn("Webhook setup skipped:", webhookError);
-      }
+    if (!stripe) {
+      throw new Error('Failed to initialize Stripe client');
     }
 
-    console.log("Syncing Stripe data...");
-    stripeSync.syncBackfill().then(() => {
-      console.log("Stripe data synced");
-    }).catch((err: Error) => {
-      console.error("Error syncing Stripe data:", err);
-    });
-
+    console.log("Stripe client initialized successfully");
     setStripeAvailable(true);
-    console.log("Stripe initialized successfully");
+
+    // Note: Webhook setup and sync removed (Replit-specific).
+    // If you need webhooks, configure them manually in Stripe Dashboard
+    // and point them to: https://your-domain.com/api/stripe/webhook
+    console.log("Stripe ready. Configure webhooks manually in Stripe Dashboard if needed.");
+
   } catch (error) {
     console.warn("Stripe not available - billing features disabled. Reason:", (error as Error).message);
     setStripeAvailable(false);
