@@ -261,7 +261,12 @@ If you know of relevant sources or websites, include them as citations at the en
         return res.status(400).json({ error: error.errors[0].message });
       }
       console.error("Registration error:", error);
-      res.status(500).json({ error: "Registration failed" });
+      console.error("Error stack:", error instanceof Error ? error.stack : "No stack trace");
+      console.error("Error details:", error instanceof Error ? error.message : String(error));
+      res.status(500).json({ 
+        error: "Registration failed",
+        details: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : undefined
+      });
     }
   });
 
@@ -293,7 +298,12 @@ If you know of relevant sources or websites, include them as citations at the en
         return res.status(400).json({ error: error.errors[0].message });
       }
       console.error("Login error:", error);
-      res.status(500).json({ error: "Login failed" });
+      console.error("Error stack:", error instanceof Error ? error.stack : "No stack trace");
+      console.error("Error details:", error instanceof Error ? error.message : String(error));
+      res.status(500).json({ 
+        error: "Login failed",
+        details: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : undefined
+      });
     }
   });
 
