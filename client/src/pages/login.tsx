@@ -110,7 +110,7 @@ export default function LoginPage() {
                         <FormItem>
                           <FormLabel>Email</FormLabel>
                           <FormControl>
-                            <Input placeholder="you@company.com" data-testid="input-login-email" {...field} />
+                            <Input placeholder="you@company.com" autoComplete="email" data-testid="input-login-email" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -123,7 +123,7 @@ export default function LoginPage() {
                         <FormItem>
                           <FormLabel>Password</FormLabel>
                           <FormControl>
-                            <Input type="password" placeholder="Enter your password" data-testid="input-login-password" {...field} />
+                            <Input type="password" autoComplete="current-password" placeholder="Enter your password" data-testid="input-login-password" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -147,7 +147,7 @@ export default function LoginPage() {
                         <FormItem>
                           <FormLabel>Name</FormLabel>
                           <FormControl>
-                            <Input placeholder="Your name" data-testid="input-register-name" {...field} />
+                            <Input placeholder="Your name" autoComplete="name" data-testid="input-register-name" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -160,7 +160,7 @@ export default function LoginPage() {
                         <FormItem>
                           <FormLabel>Email</FormLabel>
                           <FormControl>
-                            <Input placeholder="you@company.com" data-testid="input-register-email" {...field} />
+                            <Input placeholder="you@company.com" autoComplete="email" data-testid="input-register-email" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -173,7 +173,7 @@ export default function LoginPage() {
                         <FormItem>
                           <FormLabel>Password</FormLabel>
                           <FormControl>
-                            <Input type="password" placeholder="Create a password" data-testid="input-register-password" {...field} />
+                            <Input type="password" autoComplete="new-password" placeholder="Create a password" data-testid="input-register-password" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
