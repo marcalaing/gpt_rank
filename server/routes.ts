@@ -4,6 +4,8 @@ import session from "express-session";
 import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
 import pRetry from "p-retry";
+import passport from "passport";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { storage } from "./storage";
 import { registerSchema, loginSchema, insertProjectSchema, insertBrandSchema, insertCompetitorSchema, insertPromptSchema, freeSearchSchema, insertAlertRuleSchema } from "@shared/schema";
 import { z } from "zod";
@@ -87,6 +89,83 @@ export async function registerRoutes(
       },
     })
   );
+
+  // Passport initialization
+  app.use(passport.initialize());
+  app.use(passport.session());
+
+  // Passport serialization
+  passport.serializeUser((user: any, done) => {
+    done(null, user.id);
+  });
+
+  passport.deserializeUser(async (id: string, done) => {
+    try {
+      const user = await storage.getUser(id);
+      done(null, user);
+    } catch (error) {
+      done(error, null);
+    }
+  });
+
+  // Google OAuth Strategy
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    passport.use(
+      new GoogleStrategy(
+        {
+          clientID: process.env.GOOGLE_CLIENT_ID,
+          clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+          callbackURL: process.env.GOOGLE_CALLBACK_URL || "/api/auth/google/callback",
+        },
+        async (accessToken, refreshToken, profile, done) => {
+          try {
+            // Check if user already exists by Google ID
+            const existingUser = await storage.getUserByGoogleId(profile.id);
+            if (existingUser) {
+              return done(null, existingUser);
+            }
+
+            // Check if user exists by email
+            const email = profile.emails?.[0]?.value;
+            if (!email) {
+              return done(new Error("No email from Google profile"));
+            }
+
+            const userByEmail = await storage.getUserByEmail(email);
+            if (userByEmail) {
+              // Link Google account to existing user
+              await storage.updateUser(userByEmail.id, { googleId: profile.id });
+              return done(null, { ...userByEmail, googleId: profile.id });
+            }
+
+            // Create new user
+            const newUser = await storage.createUser({
+              email,
+              name: profile.displayName || email.split("@")[0],
+              googleId: profile.id,
+              password: null, // No password for Google OAuth users
+            });
+
+            // Create default organization
+            const org = await storage.createOrganization({
+              name: `${newUser.name}'s Workspace`,
+              slug: `org-${newUser.id.slice(0, 8)}`,
+            });
+
+            await storage.addOrganizationMember({
+              userId: newUser.id,
+              organizationId: org.id,
+              role: "admin",
+            });
+
+            return done(null, newUser);
+          } catch (error) {
+            return done(error as Error);
+          }
+        }
+      )
+    );
+  }
 
   // Rate limiters
   const authLimiter = rateLimit({
@@ -465,7 +544,11 @@ If you know of relevant sources or websites, include them as citations.`;
         return res.status(400).json({ error: "Email already registered" });
       }
 
-      const hashedPassword = await bcrypt.hash(data.password, 10);
+      if (!data.password && !data.googleId) {
+        return res.status(400).json({ error: "Password is required for email registration" });
+      }
+
+      const hashedPassword = data.password ? await bcrypt.hash(data.password, 10) : null;
       const user = await storage.createUser({
         ...data,
         password: hashedPassword,
@@ -509,6 +592,11 @@ If you know of relevant sources or websites, include them as citations.`;
         return res.status(400).json({ error: "Invalid email or password" });
       }
 
+      // Check if user has a password (Google OAuth users don't)
+      if (!user.password) {
+        return res.status(400).json({ error: "Please sign in with Google" });
+      }
+
       const validPassword = await bcrypt.compare(data.password, user.password);
       if (!validPassword) {
         return res.status(400).json({ error: "Invalid email or password" });
@@ -537,6 +625,19 @@ If you know of relevant sources or websites, include them as citations.`;
       res.json({ success: true });
     });
   });
+
+  // Google OAuth routes
+  app.get("/api/auth/google", passport.authenticate("google", { scope: ["profile", "email"] }));
+
+  app.get(
+    "/api/auth/google/callback",
+    passport.authenticate("google", { failureRedirect: "/login?error=oauth" }),
+    (req, res) => {
+      // Successful authentication
+      req.session.userId = (req.user as any).id;
+      res.redirect("/dashboard");
+    }
+  );
 
   app.get("/api/auth/me", requireAuth, async (req, res) => {
     const user = await storage.getUser(req.session.userId!);

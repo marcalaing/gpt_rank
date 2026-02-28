@@ -14,7 +14,8 @@ export const auditActionEnum = pgEnum("audit_action", ["create", "update", "dele
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: text("email").notNull().unique(),
-  password: text("password").notNull(),
+  password: text("password"), // Nullable for Google OAuth users
+  googleId: text("google_id").unique(), // Google OAuth ID
   name: text("name").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -323,8 +324,9 @@ export const loginSchema = z.object({
 
 export const registerSchema = insertUserSchema.extend({
   email: z.string().email(),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: z.string().min(6, "Password must be at least 6 characters").optional(),
   name: z.string().min(1, "Name is required"),
+  googleId: z.string().optional(),
 });
 
 // Free search schema
