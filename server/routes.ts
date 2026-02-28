@@ -9,6 +9,8 @@ import { registerSchema, loginSchema, insertProjectSchema, insertBrandSchema, in
 import { z } from "zod";
 import { isStripeAvailable } from "./stripeStatus";
 import { getTierLimits } from "./webhookHandlers";
+import { scrapeDomain } from "./services/domain-scraper";
+import { runBrandOnboarding } from "./services/brand-onboarding";
 
 const budgetUpdateSchema = z.object({
   monthlyBudgetSoft: z.number().min(0).optional().nullable(),
@@ -286,6 +288,170 @@ If you know of relevant sources or websites, include them as citations at the en
       }
       console.error("Free search error:", error);
       res.status(500).json({ error: "Search failed. Please try again." });
+    }
+  });
+
+  // Free visibility checker - One-input flow (domain only)
+  const freeVisibilitySchema = z.object({
+    domain: z.string().min(3, "Domain must be at least 3 characters").max(100),
+  });
+
+  app.post("/api/free-visibility-check", freeSearchLimiter, async (req, res) => {
+    try {
+      const { domain } = freeVisibilitySchema.parse(req.body);
+      
+      // Step 1: Scrape domain to extract brand metadata
+      const metadata = await scrapeDomain(domain);
+      const { brandName, description } = metadata;
+      
+      // Step 2: Understand the brand and generate queries
+      const onboardingResult = await runBrandOnboarding(brandName, domain);
+      const { insight, queries } = onboardingResult;
+      
+      // Step 3: Run each query against ChatGPT (gpt-4o-mini for cost efficiency)
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+      
+      const systemPrompt = `You are a knowledgeable assistant. Answer the user's question thoroughly but concisely. 
+When mentioning brands, companies, or products, be specific and name them explicitly.
+If you know of relevant sources or websites, include them as citations.`;
+      
+      // Run queries in sequence (up to 5 queries)
+      const queryResults = [];
+      const maxQueries = Math.min(queries.length, 5);
+      
+      for (let i = 0; i < maxQueries; i++) {
+        const query = queries[i];
+        
+        try {
+          const completion = await pRetry(
+            async () => {
+              return await openai.chat.completions.create({
+                model: "gpt-4o-mini",
+                messages: [
+                  { role: "system", content: systemPrompt },
+                  { role: "user", content: query.query },
+                ],
+                max_tokens: 800,
+                temperature: 0.7,
+              });
+            },
+            {
+              retries: 1,
+              minTimeout: 1000,
+            }
+          );
+          
+          const aiResponse = completion.choices[0]?.message?.content || "";
+          
+          // Analyze response for brand mentions
+          const brandSynonyms = [brandName, domain.replace(/\.(com|ca|org|net|io)$/i, '')];
+          let brandMentionCount = 0;
+          
+          for (const synonym of brandSynonyms) {
+            const regex = new RegExp(synonym.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+            const matches = aiResponse.match(regex);
+            if (matches) brandMentionCount += matches.length;
+          }
+          
+          const brandMentioned = brandMentionCount > 0;
+          
+          // Extract cited domains
+          const urlRegex = /https?:\/\/[^\s\)>\]"']+/gi;
+          const urls = aiResponse.match(urlRegex) || [];
+          const citedDomains: string[] = [];
+          
+          for (const url of urls) {
+            try {
+              const parsed = new URL(url.replace(/[.,;:!?]+$/, ''));
+              const d = parsed.hostname.replace(/^www\./, '');
+              if (!citedDomains.includes(d)) {
+                citedDomains.push(d);
+              }
+            } catch {}
+          }
+          
+          // Calculate score for this query
+          let score = 0;
+          if (brandMentioned) {
+            score += 50; // Base score for being mentioned
+            score += Math.min(brandMentionCount * 10, 30); // Up to 30 for multiple mentions
+            
+            // Bonus if brand's domain is cited
+            const normalizedDomain = domain.replace(/^www\./, '');
+            if (citedDomains.some(d => d.includes(normalizedDomain) || normalizedDomain.includes(d))) {
+              score += 20;
+            }
+          }
+          score = Math.min(100, Math.max(0, score));
+          
+          queryResults.push({
+            query: query.query,
+            intent: query.intent,
+            brandMentioned,
+            mentionCount: brandMentionCount,
+            score,
+            citedDomains: citedDomains.slice(0, 5),
+            responseSnippet: aiResponse.slice(0, 300) + (aiResponse.length > 300 ? "..." : ""),
+          });
+          
+        } catch (error) {
+          console.error(`Query failed: ${query.query}`, error);
+          queryResults.push({
+            query: query.query,
+            intent: query.intent,
+            brandMentioned: false,
+            mentionCount: 0,
+            score: 0,
+            citedDomains: [],
+            error: "Query failed",
+          });
+        }
+      }
+      
+      // Calculate overall visibility score (average of query scores)
+      const avgScore = queryResults.length > 0
+        ? Math.round(queryResults.reduce((sum, r) => sum + r.score, 0) / queryResults.length)
+        : 0;
+      
+      const totalMentions = queryResults.reduce((sum, r) => sum + r.mentionCount, 0);
+      const mentionRate = queryResults.filter(r => r.brandMentioned).length / queryResults.length;
+      
+      // Generate summary
+      let summary = "";
+      if (avgScore >= 70) {
+        summary = `Excellent visibility! ${brandName} is mentioned in ${Math.round(mentionRate * 100)}% of relevant AI queries with strong presence.`;
+      } else if (avgScore >= 40) {
+        summary = `Moderate visibility. ${brandName} appears in some AI responses but there's room for improvement.`;
+      } else {
+        summary = `Low visibility. ${brandName} is rarely mentioned in AI responses for relevant queries. This presents an opportunity to improve your AI visibility.`;
+      }
+      
+      res.json({
+        domain,
+        brandName,
+        brandInsight: {
+          description: insight.description,
+          industry: insight.industry,
+          geography: insight.geography,
+        },
+        overallScore: avgScore,
+        summary,
+        totalQueries: queryResults.length,
+        totalMentions,
+        mentionRate: Math.round(mentionRate * 100),
+        queryResults,
+      });
+      
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors[0].message });
+      }
+      console.error("Free visibility check error:", error);
+      res.status(500).json({ error: "Visibility check failed. Please try again." });
     }
   });
 

@@ -6,70 +6,95 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { apiRequest } from "@/lib/queryClient";
+import { Progress } from "@/components/ui/progress";
 import {
   BarChart3,
   Search,
   Target,
   TrendingUp,
   Zap,
-  Shield,
   Globe,
   ArrowRight,
   CheckCircle,
   Loader2,
   Brain,
   Eye,
-  Users,
-  AlertCircle,
   Sparkles,
+  Award,
+  AlertTriangle,
+  ExternalLink,
 } from "lucide-react";
-import { SiOpenai } from "react-icons/si";
 
-const freeSearchSchema = z.object({
-  brandName: z.string().min(1, "Enter a brand name"),
-  prompt: z.string().min(1, "Enter a search prompt"),
-  domain: z.string().optional(),
+const domainSchema = z.object({
+  domain: z.string()
+    .min(3, "Enter a valid domain")
+    .max(100)
+    .regex(/^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$/, "Enter a valid domain (e.g., example.com)"),
 });
 
-type FreeSearchData = z.infer<typeof freeSearchSchema>;
+type DomainData = z.infer<typeof domainSchema>;
 
-type FreeSearchResult = {
-  brandName: string;
-  prompt: string;
+type QueryResult = {
+  query: string;
+  intent: string;
+  brandMentioned: boolean;
+  mentionCount: number;
   score: number;
-  provider: { 
-    name: string; 
-    model: string;
-    mentioned: boolean; 
-    sentiment: string;
-    mentionCount: number;
+  citedDomains: string[];
+  responseSnippet?: string;
+  error?: string;
+};
+
+type VisibilityResult = {
+  domain: string;
+  brandName: string;
+  brandInsight: {
+    description: string;
+    industry: string;
+    geography: string;
   };
+  overallScore: number;
   summary: string;
-  aiResponse?: string;
-  citedDomains?: { domain: string; count: number }[];
-  competitorMentions?: { name: string; count: number }[];
+  totalQueries: number;
+  totalMentions: number;
+  mentionRate: number;
+  queryResults: QueryResult[];
 };
 
 export default function LandingPage() {
-  const [searchResult, setSearchResult] = useState<FreeSearchResult | null>(null);
+  const [searchResult, setSearchResult] = useState<VisibilityResult | null>(null);
+  const [loadingStage, setLoadingStage] = useState<string>("");
 
-  const form = useForm<FreeSearchData>({
-    resolver: zodResolver(freeSearchSchema),
-    defaultValues: { brandName: "", prompt: "", domain: "" },
+  const form = useForm<DomainData>({
+    resolver: zodResolver(domainSchema),
+    defaultValues: { domain: "" },
   });
 
   const searchMutation = useMutation({
-    mutationFn: async (data: FreeSearchData) => {
-      const res = await apiRequest("POST", "/api/free-search", data);
+    mutationFn: async (data: DomainData) => {
+      setLoadingStage("Analyzing your website...");
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      setLoadingStage("Understanding your brand...");
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      setLoadingStage("Generating search queries...");
+      const res = await apiRequest("POST", "/api/free-visibility-check", data);
+      
+      setLoadingStage("Checking AI models...");
       return res.json();
     },
     onSuccess: (data) => {
       setSearchResult(data);
+      setLoadingStage("");
+    },
+    onError: () => {
+      setLoadingStage("");
     },
   });
 
@@ -77,6 +102,12 @@ export default function LandingPage() {
     if (score >= 70) return "text-green-500";
     if (score >= 40) return "text-yellow-500";
     return "text-red-500";
+  };
+
+  const getScoreBadgeVariant = (score: number): "default" | "secondary" | "destructive" => {
+    if (score >= 70) return "default";
+    if (score >= 40) return "secondary";
+    return "destructive";
   };
 
   return (
@@ -132,195 +163,203 @@ export default function LandingPage() {
               Is your brand getting mentioned—or are your competitors winning?
             </p>
 
-            {/* Free Search Tool - Front and Center */}
+            {/* Free Visibility Checker - Single Input */}
             <Card className="mt-10 mx-auto max-w-2xl border-2 border-primary/20 shadow-lg">
               <CardHeader className="pb-4">
                 <CardTitle className="text-xl flex items-center gap-2 justify-center">
-                  <Search className="h-6 w-6 text-primary" />
-                  Check Your Brand Visibility — Free, No Signup
+                  <Eye className="h-6 w-6 text-primary" />
+                  Check Your AI Visibility — Free
                 </CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Get an instant visibility score across major AI platforms
-                </p>
+                <CardDescription>
+                  Enter your domain. We'll analyze your brand and check how AI models respond.
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <Form {...form}>
                   <form
                     onSubmit={form.handleSubmit((data) => searchMutation.mutate(data))}
-                    className="space-y-3"
+                    className="space-y-4"
                   >
-                    <div className="flex flex-col sm:flex-row gap-3">
-                      <FormField
-                        control={form.control}
-                        name="brandName"
-                        render={({ field }) => (
-                          <FormItem className="flex-1">
-                            <FormControl>
-                              <Input
-                                placeholder="Your brand name (e.g., Mondou)"
-                                data-testid="input-free-search-brand"
-                                className="h-11"
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="domain"
-                        render={({ field }) => (
-                          <FormItem className="flex-1">
-                            <FormControl>
-                              <Input
-                                placeholder="Website (optional)"
-                                data-testid="input-free-search-domain"
-                                className="h-11"
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
                     <FormField
                       control={form.control}
-                      name="prompt"
+                      name="domain"
                       render={({ field }) => (
                         <FormItem>
                           <FormControl>
-                            <Input
-                              placeholder="Search prompt your customers might ask (e.g., 'What are the best pet stores in Canada?')"
-                              data-testid="input-free-search-prompt"
-                              className="h-11"
-                              {...field}
-                            />
+                            <div className="flex gap-2">
+                              <Input
+                                placeholder="Enter your website (e.g., mondou.com)"
+                                data-testid="input-domain"
+                                className="h-12 text-lg"
+                                disabled={searchMutation.isPending}
+                                {...field}
+                              />
+                              <Button
+                                type="submit"
+                                size="lg"
+                                disabled={searchMutation.isPending}
+                                data-testid="button-check-visibility"
+                              >
+                                {searchMutation.isPending ? (
+                                  <>
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                    Checking...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Search className="h-4 w-4 mr-2" />
+                                    Check Now
+                                  </>
+                                )}
+                              </Button>
+                            </div>
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-                    <Button
-                      type="submit"
-                      size="lg"
-                      className="w-full h-12 text-base"
-                      disabled={searchMutation.isPending}
-                      data-testid="button-free-search"
-                    >
-                      {searchMutation.isPending ? (
-                        <>
-                          <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                          Checking AI Models...
-                        </>
-                      ) : (
-                        <>
-                          Check My Visibility Now <ArrowRight className="ml-2 h-5 w-5" />
-                        </>
-                      )}
-                    </Button>
-                    <p className="text-xs text-center text-muted-foreground">
-                      ✓ No credit card required • ✓ Results in 30 seconds
-                    </p>
+
+                    {/* Loading Progress */}
+                    {searchMutation.isPending && loadingStage && (
+                      <div className="space-y-2 p-4 bg-muted/50 rounded-lg">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>{loadingStage}</span>
+                        </div>
+                        <Progress value={
+                          loadingStage.includes("Analyzing") ? 25 :
+                          loadingStage.includes("Understanding") ? 50 :
+                          loadingStage.includes("Generating") ? 75 : 90
+                        } className="h-2" />
+                      </div>
+                    )}
+
+                    {searchMutation.error && (
+                      <div className="p-4 bg-destructive/10 text-destructive rounded-lg flex items-start gap-2">
+                        <AlertTriangle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                        <div className="text-sm">
+                          <p className="font-medium">Check failed</p>
+                          <p className="text-destructive/80">
+                            {searchMutation.error instanceof Error ? searchMutation.error.message : "Please try again"}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </form>
                 </Form>
 
+                {/* Results */}
                 {searchResult && (
-                  <div className="mt-6 p-4 rounded-lg bg-muted/50 space-y-4 border-2 border-primary/20">
-                    <div className="flex items-center justify-between gap-4 flex-wrap">
-                      <div>
-                        <h3 className="font-semibold text-lg">{searchResult.brandName}</h3>
-                        <p className="text-xs text-muted-foreground truncate max-w-xs">
-                          "{searchResult.prompt}"
-                        </p>
+                  <div className="mt-6 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    {/* Overall Score */}
+                    <div className="text-center p-6 bg-gradient-to-br from-primary/10 to-primary/5 rounded-lg border">
+                      <div className="flex items-center justify-center gap-2 mb-2">
+                        <Award className="h-5 w-5 text-primary" />
+                        <h3 className="text-lg font-semibold">{searchResult.brandName}</h3>
                       </div>
-                      <div className="text-center">
-                        <p className="text-xs text-muted-foreground mb-1">AI Visibility Score</p>
-                        <span className={`text-4xl font-bold ${getScoreColor(searchResult.score)}`} data-testid="text-visibility-score">
-                          {searchResult.score}<span className="text-2xl">/100</span>
-                        </span>
+                      <div className={`text-5xl font-bold mb-2 ${getScoreColor(searchResult.overallScore)}`}>
+                        {searchResult.overallScore}
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-3">Overall Visibility Score</p>
+                      <p className="text-sm max-w-md mx-auto">{searchResult.summary}</p>
+                      
+                      <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t">
+                        <div>
+                          <div className="text-2xl font-bold">{searchResult.totalQueries}</div>
+                          <div className="text-xs text-muted-foreground">Queries Tested</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-bold">{searchResult.mentionRate}%</div>
+                          <div className="text-xs text-muted-foreground">Mention Rate</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-bold">{searchResult.totalMentions}</div>
+                          <div className="text-xs text-muted-foreground">Total Mentions</div>
+                        </div>
                       </div>
                     </div>
-                    
-                    <div className="flex items-center gap-3 p-3 rounded bg-background">
-                      <SiOpenai className="h-5 w-5" />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">{searchResult.provider.name}</span>
-                          <Badge variant="secondary" className="text-xs">
-                            {searchResult.provider.model}
+
+                    {/* Brand Insight */}
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Brain className="h-4 w-4 text-primary" />
+                          Brand Analysis
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-sm">
+                        <p>{searchResult.brandInsight.description}</p>
+                        <div className="flex gap-2 pt-2">
+                          <Badge variant="outline">{searchResult.brandInsight.industry}</Badge>
+                          <Badge variant="outline">
+                            <Globe className="h-3 w-3 mr-1" />
+                            {searchResult.brandInsight.geography}
                           </Badge>
                         </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          {searchResult.provider.mentioned ? (
-                            <>
-                              <CheckCircle className="h-3 w-3 text-green-500" />
-                              <span className="text-xs text-muted-foreground">
-                                Mentioned {searchResult.provider.mentionCount} time(s) with {searchResult.provider.sentiment} sentiment
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              <AlertCircle className="h-3 w-3 text-red-500" />
-                              <span className="text-xs font-medium text-red-600 dark:text-red-400">
-                                Not mentioned — Your competitors might be winning
-                              </span>
-                            </>
-                          )}
-                        </div>
-                      </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Query Results */}
+                    <div className="space-y-3">
+                      <h3 className="text-sm font-semibold flex items-center gap-2">
+                        <Target className="h-4 w-4 text-primary" />
+                        Results by Query
+                      </h3>
+                      {searchResult.queryResults.map((result, idx) => (
+                        <Card key={idx} className="overflow-hidden">
+                          <CardContent className="p-4">
+                            <div className="flex items-start justify-between gap-3 mb-3">
+                              <div className="flex-1">
+                                <p className="text-sm font-medium mb-1">{result.query}</p>
+                                <Badge variant="outline" className="text-xs">
+                                  {result.intent}
+                                </Badge>
+                              </div>
+                              <Badge variant={getScoreBadgeVariant(result.score)} className="text-lg font-bold px-3 py-1">
+                                {result.score}
+                              </Badge>
+                            </div>
+                            
+                            <div className="space-y-2 text-xs text-muted-foreground">
+                              {result.brandMentioned ? (
+                                <div className="flex items-center gap-1 text-green-600">
+                                  <CheckCircle className="h-3 w-3" />
+                                  <span>Mentioned {result.mentionCount}x</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1 text-muted-foreground">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  <span>Not mentioned</span>
+                                </div>
+                              )}
+                              
+                              {result.citedDomains.length > 0 && (
+                                <div className="flex items-center gap-1">
+                                  <ExternalLink className="h-3 w-3" />
+                                  <span>Cited: {result.citedDomains.slice(0, 2).join(", ")}</span>
+                                </div>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
                     </div>
-                    
-                    <p className="text-sm text-muted-foreground">{searchResult.summary}</p>
-                    
-                    {searchResult.aiResponse && (
-                      <div className="pt-3 border-t">
-                        <p className="text-xs font-medium text-muted-foreground mb-2">AI Response Preview:</p>
-                        <p className="text-sm bg-background p-3 rounded max-h-32 overflow-y-auto" data-testid="text-ai-response">
-                          {searchResult.aiResponse.length > 500 
-                            ? searchResult.aiResponse.slice(0, 500) + "..." 
-                            : searchResult.aiResponse}
+
+                    {/* CTA */}
+                    <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
+                      <CardContent className="p-6 text-center">
+                        <h3 className="text-lg font-semibold mb-2">Want to Track This Over Time?</h3>
+                        <p className="text-sm text-muted-foreground mb-4">
+                          Sign up to monitor your AI visibility, track competitors, and get actionable insights to improve your rankings.
                         </p>
-                      </div>
-                    )}
-                    
-                    {searchResult.citedDomains && searchResult.citedDomains.length > 0 && (
-                      <div className="pt-3 border-t">
-                        <p className="text-xs font-medium text-muted-foreground mb-2">📎 Cited Sources:</p>
-                        <div className="flex flex-wrap gap-2">
-                          {searchResult.citedDomains.slice(0, 5).map((d) => (
-                            <Badge key={d.domain} variant="secondary" className="text-xs">
-                              {d.domain} ({d.count})
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {searchResult.competitorMentions && searchResult.competitorMentions.length > 0 && (
-                      <div className="pt-3 border-t">
-                        <p className="text-xs font-medium text-muted-foreground mb-2">🏆 Other Brands AI Recommended:</p>
-                        <div className="flex flex-wrap gap-2">
-                          {searchResult.competitorMentions.slice(0, 5).map((c) => (
-                            <Badge key={c.name} variant="outline" className="text-xs">
-                              {c.name} ({c.count})
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    
-                    <div className="pt-4 border-t space-y-2">
-                      <Link href="/login">
-                        <Button className="w-full h-12" size="lg" data-testid="button-get-full-report">
-                          See Full Report & Track Over Time <ArrowRight className="ml-2 h-5 w-5" />
-                        </Button>
-                      </Link>
-                      <p className="text-xs text-center text-muted-foreground">
-                        Track across all 4 providers • Monitor competitors • Get alerts
-                      </p>
-                    </div>
+                        <Link href="/login">
+                          <Button size="lg">
+                            Get Started Free
+                            <ArrowRight className="h-4 w-4 ml-2" />
+                          </Button>
+                        </Link>
+                      </CardContent>
+                    </Card>
                   </div>
                 )}
               </CardContent>
@@ -328,317 +367,108 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Social Proof */}
-        <section className="border-y bg-muted/30 py-12">
+        {/* Features Section */}
+        <section className="border-t bg-muted/50 py-12 md:py-20">
           <div className="container mx-auto px-4">
-            <p className="text-center text-sm text-muted-foreground mb-6">
-              Trusted by marketing teams who care about AI visibility
-            </p>
-            <div className="flex flex-wrap items-center justify-center gap-8 md:gap-12 opacity-60 grayscale">
-              {/* Placeholder for customer logos */}
-              <div className="h-12 w-32 bg-muted rounded flex items-center justify-center text-xs text-muted-foreground">
-                Customer Logo
-              </div>
-              <div className="h-12 w-32 bg-muted rounded flex items-center justify-center text-xs text-muted-foreground">
-                Customer Logo
-              </div>
-              <div className="h-12 w-32 bg-muted rounded flex items-center justify-center text-xs text-muted-foreground">
-                Customer Logo
-              </div>
-              <div className="h-12 w-32 bg-muted rounded flex items-center justify-center text-xs text-muted-foreground">
-                Customer Logo
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* How It Works */}
-        <section className="py-16">
-          <div className="container mx-auto px-4">
-            <div className="text-center mb-12">
-              <h2 className="text-3xl font-bold mb-3">How GPT Rank Works</h2>
-              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-                Know exactly where you stand—before your competitors do
-              </p>
-            </div>
-            <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-              <div className="text-center">
-                <div className="mx-auto w-16 h-16 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
-                  <Target className="h-8 w-8 text-primary" />
-                </div>
-                <div className="inline-block px-3 py-1 rounded-full bg-primary/10 text-primary text-sm font-semibold mb-3">
-                  Step 1
-                </div>
-                <h3 className="font-bold text-lg mb-2">Add Your Brand & Prompts</h3>
-                <p className="text-sm text-muted-foreground">
-                  Tell us your brand and the questions your customers ask AI. ("What's the best CRM?" "Top marketing agencies?")
-                </p>
-              </div>
-              <div className="text-center">
-                <div className="mx-auto w-16 h-16 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
-                  <Brain className="h-8 w-8 text-primary" />
-                </div>
-                <div className="inline-block px-3 py-1 rounded-full bg-primary/10 text-primary text-sm font-semibold mb-3">
-                  Step 2
-                </div>
-                <h3 className="font-bold text-lg mb-2">We Query All Major AI Models</h3>
-                <p className="text-sm text-muted-foreground">
-                  GPT Rank automatically checks ChatGPT, Claude, Perplexity, and Gemini to see if they mention your brand—and how.
-                </p>
-              </div>
-              <div className="text-center">
-                <div className="mx-auto w-16 h-16 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
-                  <TrendingUp className="h-8 w-8 text-primary" />
-                </div>
-                <div className="inline-block px-3 py-1 rounded-full bg-primary/10 text-primary text-sm font-semibold mb-3">
-                  Step 3
-                </div>
-                <h3 className="font-bold text-lg mb-2">Get Insights & Take Action</h3>
-                <p className="text-sm text-muted-foreground">
-                  See your visibility score, track trends, spy on competitors, and optimize your content to rank higher in AI.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* AI Platforms */}
-        <section className="border-y bg-muted/30 py-16">
-          <div className="container mx-auto px-4">
-            <div className="text-center mb-10">
-              <h2 className="text-3xl font-bold mb-3">Track Every Major AI Platform</h2>
+            <div className="mx-auto max-w-4xl text-center mb-12">
+              <h2 className="text-3xl font-bold mb-4">Why GPT Rank?</h2>
               <p className="text-lg text-muted-foreground">
-                Your customers are asking AI for recommendations. Are they finding you?
+                The only platform built specifically to track and improve your brand's visibility in AI-powered search.
               </p>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-4xl mx-auto">
-              <Card className="p-6 text-center hover:border-primary/50 transition-colors">
-                <SiOpenai className="h-10 w-10 mx-auto mb-3 text-foreground" />
-                <h3 className="font-semibold text-lg">ChatGPT</h3>
-                <p className="text-xs text-muted-foreground mt-1">OpenAI</p>
-                <Badge variant="secondary" className="mt-2 text-xs">Most Popular</Badge>
+
+            <div className="mx-auto max-w-5xl grid gap-8 md:grid-cols-3">
+              <Card>
+                <CardHeader>
+                  <div className="mb-2">
+                    <Eye className="h-8 w-8 text-primary" />
+                  </div>
+                  <CardTitle>Real-Time Tracking</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">
+                    Monitor how ChatGPT, Claude, Perplexity, and Gemini mention your brand across hundreds of relevant queries.
+                  </p>
+                </CardContent>
               </Card>
-              <Card className="p-6 text-center hover:border-primary/50 transition-colors">
-                <Brain className="h-10 w-10 mx-auto mb-3 text-foreground" />
-                <h3 className="font-semibold text-lg">Claude</h3>
-                <p className="text-xs text-muted-foreground mt-1">Anthropic</p>
-                <Badge variant="secondary" className="mt-2 text-xs">Growing Fast</Badge>
+
+              <Card>
+                <CardHeader>
+                  <div className="mb-2">
+                    <Target className="h-8 w-8 text-primary" />
+                  </div>
+                  <CardTitle>Competitor Intelligence</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">
+                    See who's winning in AI search, track their mentions, and identify opportunities to outrank them.
+                  </p>
+                </CardContent>
               </Card>
-              <Card className="p-6 text-center hover:border-primary/50 transition-colors">
-                <Search className="h-10 w-10 mx-auto mb-3 text-foreground" />
-                <h3 className="font-semibold text-lg">Perplexity</h3>
-                <p className="text-xs text-muted-foreground mt-1">AI Search</p>
-                <Badge variant="secondary" className="mt-2 text-xs">Citation-Heavy</Badge>
-              </Card>
-              <Card className="p-6 text-center hover:border-primary/50 transition-colors">
-                <Globe className="h-10 w-10 mx-auto mb-3 text-foreground" />
-                <h3 className="font-semibold text-lg">Gemini</h3>
-                <p className="text-xs text-muted-foreground mt-1">Google</p>
-                <Badge variant="secondary" className="mt-2 text-xs">Integrated w/ Search</Badge>
+
+              <Card>
+                <CardHeader>
+                  <div className="mb-2">
+                    <TrendingUp className="h-8 w-8 text-primary" />
+                  </div>
+                  <CardTitle>Actionable Insights</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">
+                    Get specific recommendations on how to improve your AI visibility and drive more organic discovery.
+                  </p>
+                </CardContent>
               </Card>
             </div>
           </div>
         </section>
 
-        {/* Features */}
-        <section className="py-16">
+        {/* CTA Section */}
+        <section className="border-t py-12 md:py-20">
           <div className="container mx-auto px-4">
-            <div className="text-center mb-12">
-              <h2 className="text-3xl font-bold mb-3">Everything You Need to Win in AI</h2>
-              <p className="text-muted-foreground">
-                Stop guessing. Start tracking.
-              </p>
-            </div>
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
-              <div className="flex gap-4">
-                <div className="shrink-0 w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Eye className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-lg mb-2">Visibility Scoring</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Get a clear 0-100 score showing exactly how visible you are. Track changes over time.
-                  </p>
-                </div>
-              </div>
-              <div className="flex gap-4">
-                <div className="shrink-0 w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Users className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-lg mb-2">Competitor Intelligence</h3>
-                  <p className="text-sm text-muted-foreground">
-                    See who AI recommends instead of you. Steal their strategies before they steal your customers.
-                  </p>
-                </div>
-              </div>
-              <div className="flex gap-4">
-                <div className="shrink-0 w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Zap className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-lg mb-2">Citation Analysis</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Discover which websites AI trusts most. Optimize your backlink strategy accordingly.
-                  </p>
-                </div>
-              </div>
-              <div className="flex gap-4">
-                <div className="shrink-0 w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <TrendingUp className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-lg mb-2">Trend Monitoring</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Watch your AI visibility improve (or tank) over time. Historical data you can actually use.
-                  </p>
-                </div>
-              </div>
-              <div className="flex gap-4">
-                <div className="shrink-0 w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Shield className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-lg mb-2">Smart Alerts</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Get notified when your visibility drops, competitors surge, or new opportunities appear.
-                  </p>
-                </div>
-              </div>
-              <div className="flex gap-4">
-                <div className="shrink-0 w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <BarChart3 className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-lg mb-2">Stakeholder Reports</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Export beautiful reports to show your boss exactly what's working (and what's not).
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Testimonials */}
-        <section className="border-y bg-muted/30 py-16">
-          <div className="container mx-auto px-4">
-            <div className="text-center mb-12">
-              <h2 className="text-3xl font-bold">What Marketing Teams Are Saying</h2>
-            </div>
-            <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-              <Card className="p-6">
-                <div className="flex gap-1 mb-3">
-                  {[...Array(5)].map((_, i) => (
-                    <span key={i} className="text-yellow-500">★</span>
-                  ))}
-                </div>
-                <p className="text-sm text-muted-foreground mb-4">
-                  "We had no idea we were invisible to ChatGPT until we used GPT Rank. Now we're mentioned 3x more often."
-                </p>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">
-                    JD
-                  </div>
-                  <div>
-                    <p className="font-semibold text-sm">Jane Doe</p>
-                    <p className="text-xs text-muted-foreground">CMO, TechCorp</p>
-                  </div>
-                </div>
-              </Card>
-              <Card className="p-6">
-                <div className="flex gap-1 mb-3">
-                  {[...Array(5)].map((_, i) => (
-                    <span key={i} className="text-yellow-500">★</span>
-                  ))}
-                </div>
-                <p className="text-sm text-muted-foreground mb-4">
-                  "Finally, a way to track AI search like we track Google. This is the future of SEO."
-                </p>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">
-                    MS
-                  </div>
-                  <div>
-                    <p className="font-semibold text-sm">Mike Smith</p>
-                    <p className="text-xs text-muted-foreground">Founder, GrowthAgency</p>
-                  </div>
-                </div>
-              </Card>
-              <Card className="p-6">
-                <div className="flex gap-1 mb-3">
-                  {[...Array(5)].map((_, i) => (
-                    <span key={i} className="text-yellow-500">★</span>
-                  ))}
-                </div>
-                <p className="text-sm text-muted-foreground mb-4">
-                  "GPT Rank showed us our competitors were dominating AI search. We fixed it in 2 months."
-                </p>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">
-                    SL
-                  </div>
-                  <div>
-                    <p className="font-semibold text-sm">Sarah Lee</p>
-                    <p className="text-xs text-muted-foreground">Marketing Director, SaaS Co</p>
-                  </div>
-                </div>
-              </Card>
-            </div>
-          </div>
-        </section>
-
-        {/* Final CTA */}
-        <section className="py-20">
-          <div className="container mx-auto px-4 text-center">
-            <div className="max-w-3xl mx-auto">
-              <h2 className="text-4xl font-bold mb-4">
-                Stop Losing Customers to AI Recommendations
+            <div className="mx-auto max-w-2xl text-center">
+              <h2 className="text-3xl font-bold mb-4">
+                Start Tracking Your AI Visibility Today
               </h2>
-              <p className="text-xl text-muted-foreground mb-8">
-                Your competitors are already tracking their AI visibility. Are you?
+              <p className="text-lg text-muted-foreground mb-8">
+                Join brands who are already optimizing for the AI-powered future of search.
               </p>
-              <div className="flex flex-col sm:flex-row gap-4 justify-center mb-6">
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Link href="/login">
-                  <Button size="lg" className="h-14 text-lg px-8" data-testid="button-cta-get-started">
-                    Start Tracking for Free <ArrowRight className="ml-2 h-5 w-5" />
+                  <Button size="lg">
+                    <Zap className="h-4 w-4 mr-2" />
+                    Get Started Free
                   </Button>
                 </Link>
                 <Link href="/pricing">
-                  <Button variant="outline" size="lg" className="h-14 text-lg px-8" data-testid="button-cta-pricing">
+                  <Button size="lg" variant="outline">
                     View Pricing
                   </Button>
                 </Link>
               </div>
-              <p className="text-sm text-muted-foreground">
-                ✓ Free brand check • ✓ No credit card • ✓ See results in 30 seconds
-              </p>
             </div>
           </div>
         </section>
       </main>
 
-      <footer className="border-t py-8">
+      <footer className="border-t py-8 bg-muted/30">
         <div className="container mx-auto px-4">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5 text-primary" />
-              <span className="font-semibold">GPT Rank</span>
+              <span>© 2025 GPT Rank. All rights reserved.</span>
             </div>
-            <nav className="flex flex-wrap gap-6 text-sm text-muted-foreground">
+            <nav className="flex gap-6">
               <Link href="/pricing" className="hover:text-foreground">
                 Pricing
               </Link>
               <Link href="/affiliates" className="hover:text-foreground">
                 Affiliates
               </Link>
-              <Link href="/login" className="hover:text-foreground">
-                Sign In
-              </Link>
+              <a href="mailto:support@gptrank.com" className="hover:text-foreground">
+                Contact
+              </a>
             </nav>
-            <p className="text-sm text-muted-foreground">
-              2025 GPT Rank. All rights reserved.
-            </p>
           </div>
         </div>
       </footer>
