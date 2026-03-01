@@ -928,6 +928,66 @@ If you know of relevant sources or websites, include them as citations.`;
     }
   });
 
+  // Update prompt
+  app.patch("/api/prompts/:promptId", requireAuth, async (req, res) => {
+    try {
+      const prompt = await storage.getPrompt(req.params.promptId);
+      if (!prompt) {
+        return res.status(404).json({ error: "Prompt not found" });
+      }
+      
+      const hasAccess = await verifyProjectAccess(req.session.userId!, prompt.projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const updateSchema = z.object({
+        name: z.string().optional(),
+        template: z.string().optional(),
+        isActive: z.boolean().optional(),
+        scheduleEnabled: z.boolean().optional(),
+        scheduleCron: z.string().optional().nullable(),
+        preferredModel: z.string().optional().nullable(),
+      });
+
+      const data = updateSchema.parse(req.body);
+      const updated = await storage.updatePrompt(req.params.promptId, data);
+      
+      if (!updated) {
+        return res.status(404).json({ error: "Prompt not found" });
+      }
+
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors[0].message });
+      }
+      console.error("Update prompt error:", error);
+      res.status(500).json({ error: "Failed to update prompt" });
+    }
+  });
+
+  // Get prompt runs
+  app.get("/api/prompts/:promptId/runs", requireAuth, async (req, res) => {
+    try {
+      const prompt = await storage.getPrompt(req.params.promptId);
+      if (!prompt) {
+        return res.status(404).json({ error: "Prompt not found" });
+      }
+      
+      const hasAccess = await verifyProjectAccess(req.session.userId!, prompt.projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const runs = await storage.getPromptRunsByPrompt(req.params.promptId);
+      res.json(runs);
+    } catch (error) {
+      console.error("Get prompt runs error:", error);
+      res.status(500).json({ error: "Failed to get prompt runs" });
+    }
+  });
+
   // Admin - Job Queue
   app.get("/api/admin/jobs", requireAuth, async (_req, res) => {
     try {

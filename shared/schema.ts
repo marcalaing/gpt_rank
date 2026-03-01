@@ -124,6 +124,7 @@ export const prompts = pgTable("prompts", {
   nextRunAt: timestamp("next_run_at"), // next scheduled run time
   volumeScore: integer("volume_score"), // 1-10 search demand score
   aiLikeliness: integer("ai_likeliness"), // 1-10 AI search likelihood
+  preferredModel: text("preferred_model"), // preferred AI model for this prompt (e.g., "gpt-4o-mini", "claude-3-5-sonnet")
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

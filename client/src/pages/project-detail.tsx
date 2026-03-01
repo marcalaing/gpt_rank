@@ -34,12 +34,12 @@ import {
   DollarSign,
   Upload,
   FileText,
-  Sparkles,
-  Tags,
-  Play,
+  PlayCircle,
+  Lightbulb,
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { PromptTemplate } from "@shared/schema";
+import { PromptCard } from "@/components/prompt-card";
 
 const brandSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -56,7 +56,6 @@ const competitorSchema = z.object({
 const promptSchema = z.object({
   name: z.string().min(1, "Name is required"),
   template: z.string().min(1, "Prompt template is required"),
-  tags: z.string().optional(),
   locale: z.string().optional(),
   isActive: z.boolean().default(true),
   scheduleEnabled: z.boolean().default(false),
@@ -76,7 +75,7 @@ export default function ProjectDetailPage() {
   const [promptDialogOpen, setPromptDialogOpen] = useState(false);
   const [bulkImportDialogOpen, setBulkImportDialogOpen] = useState(false);
   const [bulkImportText, setBulkImportText] = useState("");
-  const [groupByTag, setGroupByTag] = useState(false);
+  const [runningAll, setRunningAll] = useState(false);
 
   const { data: project, isLoading: projectLoading } = useQuery<Project>({
     queryKey: ["/api/projects", projectId],
@@ -114,7 +113,7 @@ export default function ProjectDetailPage() {
 
   const promptForm = useForm<PromptFormData>({
     resolver: zodResolver(promptSchema),
-    defaultValues: { name: "", template: "", tags: "", locale: "en", isActive: true, scheduleEnabled: false, scheduleCron: "" },
+    defaultValues: { name: "", template: "", locale: "en", isActive: true, scheduleEnabled: false, scheduleCron: "" },
   });
 
   const createCompetitorMutation = useMutation({
@@ -140,11 +139,9 @@ export default function ProjectDetailPage() {
 
   const createPromptMutation = useMutation({
     mutationFn: async (data: PromptFormData) => {
-      const tagsArr = data.tags ? data.tags.split(",").map(s => s.trim()).filter(s => s) : [];
       const res = await apiRequest("POST", `/api/projects/${projectId}/prompts`, {
         name: data.name,
         template: data.template,
-        tags: tagsArr.length > 0 ? tagsArr : null,
         locale: data.locale || "en",
         isActive: data.isActive,
         scheduleEnabled: data.scheduleEnabled,
@@ -163,6 +160,27 @@ export default function ProjectDetailPage() {
     },
   });
 
+  const runAllPromptsMutation = useMutation({
+    mutationFn: async () => {
+      setRunningAll(true);
+      const res = await apiRequest("POST", `/api/projects/${projectId}/run-all`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setRunningAll(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "prompts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "scores"] });
+      toast({ 
+        title: "All prompts executed", 
+        description: `${data.successCount} succeeded, ${data.failedCount} failed, ${data.skippedCount} skipped` 
+      });
+    },
+    onError: (error: Error) => {
+      setRunningAll(false);
+      toast({ title: "Failed to run prompts", description: error.message, variant: "destructive" });
+    },
+  });
+
   const bulkImportMutation = useMutation({
     mutationFn: async (text: string) => {
       const lines = text.trim().split("\n").filter(line => line.trim());
@@ -171,7 +189,6 @@ export default function ProjectDetailPage() {
         return {
           name: parts[0] || "",
           template: parts[1] || parts[0] || "",
-          tags: parts[2] ? parts[2].split(";").map(t => t.trim()).filter(t => t) : null,
           locale: "en",
           isActive: true,
           scheduleEnabled: false,
@@ -199,46 +216,7 @@ export default function ProjectDetailPage() {
   const applyTemplate = (template: PromptTemplate) => {
     promptForm.setValue("name", template.name);
     promptForm.setValue("template", template.template);
-    if (template.category) {
-      promptForm.setValue("tags", template.category);
-    }
   };
-
-  const autoTagMutation = useMutation({
-    mutationFn: async (promptId: string) => {
-      const res = await apiRequest("POST", `/api/prompts/${promptId}/auto-tag`);
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "prompts"] });
-      toast({ title: "Prompt tagged successfully" });
-    },
-    onError: (error: Error) => {
-      toast({ title: "Failed to auto-tag prompt", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const [runningPromptId, setRunningPromptId] = useState<string | null>(null);
-
-  const runPromptMutation = useMutation({
-    mutationFn: async (promptId: string) => {
-      setRunningPromptId(promptId);
-      const res = await apiRequest("POST", `/api/prompts/${promptId}/run`);
-      return res.json();
-    },
-    onSuccess: (data) => {
-      setRunningPromptId(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "prompts"] });
-      const score = data.promptRun?.parsedMentions?.brandMentioned 
-        ? `Brand mentioned! Score calculated.` 
-        : `Analysis complete.`;
-      toast({ title: "Prompt executed successfully", description: score });
-    },
-    onError: (error: Error) => {
-      setRunningPromptId(null);
-      toast({ title: "Failed to run prompt", description: error.message, variant: "destructive" });
-    },
-  });
 
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
   const [newAlertType, setNewAlertType] = useState<string>("score_drop");
@@ -291,15 +269,6 @@ export default function ProjectDetailPage() {
       toast({ title: "Failed to acknowledge alert", description: error.message, variant: "destructive" });
     },
   });
-
-  const groupedPrompts = groupByTag 
-    ? prompts.reduce((acc, prompt) => {
-        const tag = prompt.tags?.[0] || "uncategorized";
-        if (!acc[tag]) acc[tag] = [];
-        acc[tag].push(prompt);
-        return acc;
-      }, {} as Record<string, Prompt[]>)
-    : null;
 
   if (projectLoading) {
     return (
@@ -453,18 +422,7 @@ export default function ProjectDetailPage() {
 
           <TabsContent value="prompts" className="mt-6 space-y-4">
             <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div className="flex items-center gap-3 flex-wrap">
-                <h2 className="text-lg font-semibold">Prompts</h2>
-                <Button 
-                  variant={groupByTag ? "default" : "outline"} 
-                  size="sm"
-                  onClick={() => setGroupByTag(!groupByTag)}
-                  data-testid="button-toggle-group"
-                >
-                  <Tags className="h-4 w-4 mr-2" />
-                  Group by Tag
-                </Button>
-              </div>
+              <h2 className="text-lg font-semibold">Prompts</h2>
               <div className="flex gap-2 flex-wrap">
                 <Dialog open={bulkImportDialogOpen} onOpenChange={setBulkImportDialogOpen}>
                   <DialogTrigger asChild>
@@ -477,13 +435,13 @@ export default function ProjectDetailPage() {
                     <DialogHeader>
                       <DialogTitle>Bulk Import Prompts</DialogTitle>
                       <DialogDescription>
-                        Paste CSV data with format: name, template, tags (semicolon-separated)
+                        Paste CSV data with format: name, template (one per line)
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">
                       <Textarea
-                        placeholder="Best CRM tools, What are the best CRM tools for small businesses?, crm;software
-Top project management apps, What are the top project management applications?, project;management"
+                        placeholder="Best CRM tools, What are the best CRM tools for small businesses?
+Top project management apps, What are the top project management applications?"
                         className="min-h-[200px] font-mono text-sm"
                         value={bulkImportText}
                         onChange={(e) => setBulkImportText(e.target.value)}
@@ -566,19 +524,6 @@ Top project management apps, What are the top project management applications?, 
                             </FormItem>
                           )}
                         />
-                        <FormField
-                          control={promptForm.control}
-                          name="tags"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Tags (comma-separated)</FormLabel>
-                              <FormControl>
-                                <Input placeholder="crm, software, b2b" data-testid="input-prompt-tags" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
                         <div className="flex gap-4">
                           <FormField
                             control={promptForm.control}
@@ -613,11 +558,28 @@ Top project management apps, What are the top project management applications?, 
                     </Form>
                   </DialogContent>
                 </Dialog>
+                <Button
+                  variant="default"
+                  onClick={() => runAllPromptsMutation.mutate()}
+                  disabled={runningAll || prompts.length === 0}
+                  data-testid="button-run-all"
+                >
+                  {runningAll ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <PlayCircle className="h-4 w-4 mr-2" />
+                  )}
+                  Run All Prompts
+                </Button>
               </div>
             </div>
 
             {promptsLoading ? (
-              <Skeleton className="h-48 w-full" />
+              <div className="space-y-4">
+                {[...Array(3)].map((_, i) => (
+                  <Skeleton key={i} className="h-24 w-full" />
+                ))}
+              </div>
             ) : prompts.length === 0 ? (
               <Card>
                 <CardContent className="pt-6 text-center">
@@ -625,136 +587,12 @@ Top project management apps, What are the top project management applications?, 
                   <p className="text-muted-foreground">No prompts yet. Add your first prompt to start tracking.</p>
                 </CardContent>
               </Card>
-            ) : groupByTag && groupedPrompts ? (
+            ) : (
               <div className="space-y-4">
-                {Object.entries(groupedPrompts).map(([tag, tagPrompts]) => (
-                  <Card key={tag}>
-                    <CardHeader className="py-3">
-                      <CardTitle className="text-sm font-medium flex items-center gap-2">
-                        <Badge variant="outline">{tag}</Badge>
-                        <span className="text-muted-foreground">({tagPrompts.length})</span>
-                      </CardTitle>
-                    </CardHeader>
-                    <Table>
-                      <TableBody>
-                        {tagPrompts.map((prompt) => (
-                          <TableRow key={prompt.id} data-testid={`row-prompt-${prompt.id}`}>
-                            <TableCell className="font-medium">{prompt.name}</TableCell>
-                            <TableCell className="max-w-xs truncate">{prompt.template}</TableCell>
-                            <TableCell>
-                              <Badge variant={prompt.isActive ? "default" : "secondary"}>
-                                {prompt.isActive ? "Active" : "Inactive"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => autoTagMutation.mutate(prompt.id)}
-                                disabled={autoTagMutation.isPending}
-                                data-testid={`button-autotag-${prompt.id}`}
-                              >
-                                <Sparkles className="h-4 w-4" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </Card>
+                {prompts.map((prompt) => (
+                  <PromptCard key={prompt.id} prompt={prompt} projectId={projectId!} />
                 ))}
               </div>
-            ) : (
-              <Card>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Template</TableHead>
-                      <TableHead>Volume</TableHead>
-                      <TableHead>Tags</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Schedule</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {prompts.map((prompt) => (
-                      <TableRow key={prompt.id} data-testid={`row-prompt-${prompt.id}`}>
-                        <TableCell className="font-medium">{prompt.name}</TableCell>
-                        <TableCell className="max-w-xs truncate">{prompt.template}</TableCell>
-                        <TableCell>
-                          {prompt.volumeScore !== null && prompt.volumeScore !== undefined ? (
-                            <div 
-                              className="flex items-center gap-1 cursor-help" 
-                              title={`Volume Score: ${prompt.volumeScore}/10\nAI-likeliness: ${prompt.aiLikeliness || 5}/10\n\nMeasures search demand and likelihood of AI mention.`}
-                            >
-                              <span className={`font-medium ${
-                                prompt.volumeScore >= 7 ? "text-green-600 dark:text-green-400" :
-                                prompt.volumeScore >= 4 ? "text-yellow-600 dark:text-yellow-400" :
-                                "text-muted-foreground"
-                              }`}>
-                                {prompt.volumeScore}/10
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground text-sm" title="Volume score not yet calculated">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                            {prompt.tags?.map((tag) => (
-                              <Badge key={tag} variant="secondary" className="text-xs">
-                                {tag}
-                              </Badge>
-                            ))}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={prompt.isActive ? "default" : "secondary"}>
-                            {prompt.isActive ? "Active" : "Inactive"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {prompt.scheduleEnabled ? (
-                            <Badge variant="outline">{prompt.scheduleCron || "Enabled"}</Badge>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">Manual</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => runPromptMutation.mutate(prompt.id)}
-                              disabled={runningPromptId === prompt.id}
-                              title="Run prompt now"
-                              data-testid={`button-run-${prompt.id}`}
-                            >
-                              {runningPromptId === prompt.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Play className="h-4 w-4" />
-                              )}
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => autoTagMutation.mutate(prompt.id)}
-                              disabled={autoTagMutation.isPending}
-                              title="Auto-tag with AI"
-                              data-testid={`button-autotag-${prompt.id}`}
-                            >
-                              <Sparkles className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </Card>
             )}
           </TabsContent>
 
