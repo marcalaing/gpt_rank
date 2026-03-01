@@ -28,6 +28,8 @@ import type { Project } from "@shared/schema";
 const createProjectSchema = z.object({
   name: z.string().min(1, "Name is required"),
   description: z.string().optional(),
+  domain: z.string().optional(),
+  synonyms: z.string().optional(),
 });
 
 type CreateProjectFormData = z.infer<typeof createProjectSchema>;
@@ -75,6 +77,9 @@ function ProjectCard({ project, loading }: { project?: ProjectWithStats; loading
             <CardTitle className="text-base truncate" data-testid={`text-project-name-${project.id}`}>
               {project.name}
             </CardTitle>
+            {project.domain && (
+              <p className="text-xs text-muted-foreground mt-0.5">{project.domain}</p>
+            )}
             <CardDescription className="line-clamp-2 mt-1">
               {project.description || "No description"}
             </CardDescription>
@@ -90,9 +95,6 @@ function ProjectCard({ project, loading }: { project?: ProjectWithStats; loading
         <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="secondary" className="text-xs">
             {project.promptCount} prompts
-          </Badge>
-          <Badge variant="secondary" className="text-xs">
-            {project.brandCount} brands
           </Badge>
           <Badge variant="secondary" className="text-xs">
             {project.competitorCount} competitors
@@ -112,12 +114,18 @@ function CreateProjectDialog({ open, onOpenChange }: { open: boolean; onOpenChan
 
   const form = useForm<CreateProjectFormData>({
     resolver: zodResolver(createProjectSchema),
-    defaultValues: { name: "", description: "" },
+    defaultValues: { name: "", description: "", domain: "", synonyms: "" },
   });
 
   const createMutation = useMutation({
     mutationFn: async (data: CreateProjectFormData) => {
-      const res = await apiRequest("POST", "/api/projects", data);
+      const synonymsArr = data.synonyms ? data.synonyms.split(",").map(s => s.trim()).filter(s => s) : [];
+      const res = await apiRequest("POST", "/api/projects", {
+        name: data.name,
+        description: data.description,
+        domain: data.domain || null,
+        synonyms: synonymsArr.length > 0 ? synonymsArr : null,
+      });
       return res.json();
     },
     onSuccess: () => {
@@ -137,7 +145,7 @@ function CreateProjectDialog({ open, onOpenChange }: { open: boolean; onOpenChan
         <DialogHeader>
           <DialogTitle>Create New Project</DialogTitle>
           <DialogDescription>
-            Projects help you organize prompts, brands, and competitors for tracking.
+            Create a project to track your brand's AI search visibility.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -147,9 +155,35 @@ function CreateProjectDialog({ open, onOpenChange }: { open: boolean; onOpenChan
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Project Name</FormLabel>
+                  <FormLabel>Project Name (Brand Name)</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., Brand Visibility Q1" data-testid="input-project-name" {...field} />
+                    <Input placeholder="e.g., Acme Corp" data-testid="input-project-name" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="domain"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Domain (optional)</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g., acmecorp.com" data-testid="input-project-domain" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="synonyms"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Synonyms (optional, comma-separated)</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g., Acme, Acme Inc" data-testid="input-project-synonyms" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

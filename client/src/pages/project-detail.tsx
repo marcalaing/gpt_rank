@@ -72,7 +72,6 @@ export default function ProjectDetailPage() {
   const projectId = params?.id;
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("overview");
-  const [brandDialogOpen, setBrandDialogOpen] = useState(false);
   const [competitorDialogOpen, setCompetitorDialogOpen] = useState(false);
   const [promptDialogOpen, setPromptDialogOpen] = useState(false);
   const [bulkImportDialogOpen, setBulkImportDialogOpen] = useState(false);
@@ -81,11 +80,6 @@ export default function ProjectDetailPage() {
 
   const { data: project, isLoading: projectLoading } = useQuery<Project>({
     queryKey: ["/api/projects", projectId],
-    enabled: !!projectId,
-  });
-
-  const { data: brands = [], isLoading: brandsLoading } = useQuery<Brand[]>({
-    queryKey: ["/api/projects", projectId, "brands"],
     enabled: !!projectId,
   });
 
@@ -113,11 +107,6 @@ export default function ProjectDetailPage() {
     enabled: !!projectId,
   });
 
-  const brandForm = useForm<BrandFormData>({
-    resolver: zodResolver(brandSchema),
-    defaultValues: { name: "", domain: "", synonyms: "" },
-  });
-
   const competitorForm = useForm<CompetitorFormData>({
     resolver: zodResolver(competitorSchema),
     defaultValues: { name: "", domain: "", synonyms: "" },
@@ -126,35 +115,6 @@ export default function ProjectDetailPage() {
   const promptForm = useForm<PromptFormData>({
     resolver: zodResolver(promptSchema),
     defaultValues: { name: "", template: "", tags: "", locale: "en", isActive: true, scheduleEnabled: false, scheduleCron: "" },
-  });
-
-  const createBrandMutation = useMutation({
-    mutationFn: async (data: BrandFormData) => {
-      const synonymsArr = data.synonyms ? data.synonyms.split(",").map(s => s.trim()).filter(s => s) : [];
-      const res = await apiRequest("POST", `/api/projects/${projectId}/brands`, {
-        name: data.name,
-        domain: data.domain || null,
-        synonyms: synonymsArr.length > 0 ? synonymsArr : null,
-      });
-      return res.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "brands"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "prompts"] });
-      if (data.onboardingStarted) {
-        toast({ 
-          title: "Brand created", 
-          description: "Analyzing your brand and generating search queries. This may take a moment..." 
-        });
-      } else {
-        toast({ title: "Brand created successfully" });
-      }
-      setBrandDialogOpen(false);
-      brandForm.reset();
-    },
-    onError: (error: Error) => {
-      toast({ title: "Failed to create brand", description: error.message, variant: "destructive" });
-    },
   });
 
   const createCompetitorMutation = useMutation({
@@ -384,10 +344,6 @@ export default function ProjectDetailPage() {
               <BarChart3 className="h-4 w-4 mr-2" />
               Overview
             </TabsTrigger>
-            <TabsTrigger value="brands" data-testid="tab-brands">
-              <Target className="h-4 w-4 mr-2" />
-              Brands
-            </TabsTrigger>
             <TabsTrigger value="competitors" data-testid="tab-competitors">
               <Users className="h-4 w-4 mr-2" />
               Competitors
@@ -407,16 +363,7 @@ export default function ProjectDetailPage() {
           </TabsList>
 
           <TabsContent value="overview" className="mt-6 space-y-6">
-            <div className="grid gap-4 md:grid-cols-3">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Brands</CardTitle>
-                  <Target className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold" data-testid="stat-brands-count">{brands.length}</div>
-                </CardContent>
-              </Card>
+            <div className="grid gap-4 md:grid-cols-2">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Competitors</CardTitle>
@@ -502,110 +449,6 @@ export default function ProjectDetailPage() {
                 </CardContent>
               </Card>
             </div>
-          </TabsContent>
-
-          <TabsContent value="brands" className="mt-6 space-y-4">
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <h2 className="text-lg font-semibold">Brands</h2>
-              <Dialog open={brandDialogOpen} onOpenChange={setBrandDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button data-testid="button-add-brand">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Brand
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Add Brand</DialogTitle>
-                    <DialogDescription>
-                      Add your brand to track its visibility. We'll automatically generate 5 relevant search queries and run initial visibility scoring.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <Form {...brandForm}>
-                    <form onSubmit={brandForm.handleSubmit((data) => createBrandMutation.mutate(data))} className="space-y-4">
-                      <FormField
-                        control={brandForm.control}
-                        name="name"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Name</FormLabel>
-                            <FormControl>
-                              <Input placeholder="Your brand name" data-testid="input-brand-name" {...field} />
-                            </FormControl>
-                            <FormMessage data-testid="error-brand-name" />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={brandForm.control}
-                        name="domain"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Domain</FormLabel>
-                            <FormControl>
-                              <Input placeholder="yourbrand.com" data-testid="input-brand-domain" {...field} />
-                            </FormControl>
-                            <FormMessage data-testid="error-brand-domain" />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={brandForm.control}
-                        name="synonyms"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Synonyms (comma-separated)</FormLabel>
-                            <FormControl>
-                              <Input placeholder="Alt Name 1, Alt Name 2" data-testid="input-brand-synonyms" {...field} />
-                            </FormControl>
-                            <FormMessage data-testid="error-brand-synonyms" />
-                          </FormItem>
-                        )}
-                      />
-                      <Button type="submit" className="w-full" disabled={createBrandMutation.isPending} data-testid="button-submit-brand">
-                        {createBrandMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Add Brand
-                      </Button>
-                    </form>
-                  </Form>
-                </DialogContent>
-              </Dialog>
-            </div>
-
-            {brandsLoading ? (
-              <Skeleton className="h-48 w-full" />
-            ) : brands.length === 0 ? (
-              <Card>
-                <CardContent className="pt-6 text-center">
-                  <Target className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">No brands yet. Add your brand to start tracking visibility.</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {brands.map((brand) => (
-                  <Card key={brand.id} data-testid={`card-brand-${brand.id}`}>
-                    <CardHeader>
-                      <CardTitle className="text-base">{brand.name}</CardTitle>
-                      {brand.domain && (
-                        <CardDescription>{brand.domain}</CardDescription>
-                      )}
-                    </CardHeader>
-                    {brand.synonyms && brand.synonyms.length > 0 && (
-                      <CardContent>
-                        <div className="flex flex-wrap gap-1">
-                          {brand.synonyms.map((syn) => (
-                            <Badge key={syn} variant="outline" className="text-xs">
-                              {syn}
-                            </Badge>
-                          ))}
-                        </div>
-                      </CardContent>
-                    )}
-                  </Card>
-                ))}
-              </div>
-            )}
           </TabsContent>
 
           <TabsContent value="prompts" className="mt-6 space-y-4">
@@ -1196,118 +1039,6 @@ Top project management apps, What are the top project management applications?, 
           </TabsContent>
 
           <TabsContent value="settings" className="mt-6 space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Target className="h-5 w-5" />
-                  Brand Settings
-                </CardTitle>
-                <CardDescription>
-                  Configure your brand names and domains to track
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                  <h3 className="font-medium">Brands</h3>
-                  <Dialog open={brandDialogOpen} onOpenChange={setBrandDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button size="sm" data-testid="button-add-brand">
-                        <Plus className="h-4 w-4 mr-2" />
-                        Add Brand
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Add Brand</DialogTitle>
-                        <DialogDescription>
-                          Add a brand name and domain to track across AI platforms
-                        </DialogDescription>
-                      </DialogHeader>
-                      <Form {...brandForm}>
-                        <form onSubmit={brandForm.handleSubmit((data) => createBrandMutation.mutate(data))} className="space-y-4">
-                          <FormField
-                            control={brandForm.control}
-                            name="name"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Name</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="Your brand name" data-testid="input-brand-name" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={brandForm.control}
-                            name="domain"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Domain</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="yourbrand.com" data-testid="input-brand-domain" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={brandForm.control}
-                            name="synonyms"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Synonyms (comma-separated)</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="Alt Name 1, Alt Name 2" data-testid="input-brand-synonyms" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <Button type="submit" className="w-full" disabled={createBrandMutation.isPending}>
-                            {createBrandMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Add Brand
-                          </Button>
-                        </form>
-                      </Form>
-                    </DialogContent>
-                  </Dialog>
-                </div>
-
-                {brandsLoading ? (
-                  <Skeleton className="h-24 w-full" />
-                ) : brands.length === 0 ? (
-                  <p className="text-muted-foreground text-sm">No brands configured yet.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {brands.map((brand) => (
-                      <div
-                        key={brand.id}
-                        className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
-                        data-testid={`item-brand-${brand.id}`}
-                      >
-                        <div>
-                          <p className="font-medium">{brand.name}</p>
-                          {brand.domain && (
-                            <p className="text-sm text-muted-foreground">{brand.domain}</p>
-                          )}
-                          {brand.synonyms && brand.synonyms.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {brand.synonyms.map((syn) => (
-                                <Badge key={syn} variant="outline" className="text-xs">
-                                  {syn}
-                                </Badge>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
             <BudgetSettingsCard projectId={projectId!} />
             <AuditLogCard projectId={projectId!} />
           </TabsContent>
