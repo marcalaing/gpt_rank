@@ -46,7 +46,7 @@ import {
   type InsertPromptTemplate,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, count, sql, desc, lte } from "drizzle-orm";
+import { eq, and, count, sql, desc, lte, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -650,7 +650,7 @@ export class DatabaseStorage implements IStorage {
       .from(scores)
       .where(
         and(
-          sql`${scores.projectId} = ANY(${projectIds})`,
+          inArray(scores.projectId, projectIds),
           eq(scores.entityType, "brand"),
           sql`${scores.calculatedAt} >= ${thirtyDaysAgo}`
         )
@@ -677,13 +677,13 @@ export class DatabaseStorage implements IStorage {
     const allRunsCount = await db.select({ count: count() })
       .from(promptRuns)
       .innerJoin(prompts, eq(promptRuns.promptId, prompts.id))
-      .where(sql`${prompts.projectId} = ANY(${projectIds})`);
+      .where(inArray(prompts.projectId, projectIds));
     
     const runsWithBrandMentions = await db.select({ count: count() })
       .from(scores)
       .where(
         and(
-          sql`${scores.projectId} = ANY(${projectIds})`,
+          inArray(scores.projectId, projectIds),
           eq(scores.entityType, "brand"),
           sql`${scores.mentionCount} > 0`
         )
@@ -698,7 +698,7 @@ export class DatabaseStorage implements IStorage {
       .from(prompts)
       .where(
         and(
-          sql`${prompts.projectId} = ANY(${projectIds})`,
+          inArray(prompts.projectId, projectIds),
           eq(prompts.isActive, true)
         )
       );
@@ -716,7 +716,7 @@ export class DatabaseStorage implements IStorage {
       .from(promptRuns)
       .innerJoin(prompts, eq(promptRuns.promptId, prompts.id))
       .innerJoin(projects, eq(prompts.projectId, projects.id))
-      .where(sql`${projects.id} = ANY(${projectIds})`)
+      .where(inArray(projects.id, projectIds))
       .orderBy(desc(promptRuns.executedAt))
       .limit(3);
     
@@ -758,7 +758,7 @@ export class DatabaseStorage implements IStorage {
     })
       .from(alertEvents)
       .innerJoin(alertRules, eq(alertEvents.alertRuleId, alertRules.id))
-      .where(sql`${alertRules.projectId} = ANY(${projectIds})`)
+      .where(inArray(alertRules.projectId, projectIds))
       .orderBy(desc(alertEvents.createdAt))
       .limit(5);
     
