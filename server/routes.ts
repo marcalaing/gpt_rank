@@ -664,6 +664,34 @@ If you know of relevant sources or websites, include them as citations.`;
     }
   });
 
+  // Get allowed models based on subscription tier
+  app.get("/api/tier/allowed-models", requireAuth, async (req, res) => {
+    try {
+      const orgs = await storage.getOrganizationsByUser(req.session.userId!);
+      if (orgs.length === 0) {
+        return res.json({ tier: "free", allowedModels: { openai: ["gpt-4o-mini"] } });
+      }
+      
+      const org = orgs[0]; // Use first org (primary)
+      const tier = org.subscriptionTier || "free";
+      const { getAllowedModels, getModelDisplayName } = await import("./tierLimits");
+      
+      const allowedModels = getAllowedModels(tier);
+      const modelsWithNames = Object.entries(allowedModels).reduce((acc, [provider, models]) => {
+        acc[provider] = models.map(modelId => ({
+          id: modelId,
+          name: getModelDisplayName(provider, modelId),
+        }));
+        return acc;
+      }, {} as Record<string, Array<{ id: string; name: string }>>);
+      
+      res.json({ tier, allowedModels: modelsWithNames });
+    } catch (error) {
+      console.error("Get allowed models error:", error);
+      res.status(500).json({ error: "Failed to get allowed models" });
+    }
+  });
+
   // Analytics API
   app.get("/api/analytics", requireAuth, async (req, res) => {
     try {
@@ -1151,6 +1179,23 @@ If you know of relevant sources or websites, include them as citations.`;
       const hasAccess = await verifyProjectAccess(req.session.userId!, prompt.projectId);
       if (!hasAccess) {
         return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Check tier limits for model access
+      const project = await storage.getProject(prompt.projectId);
+      if (project) {
+        const org = await storage.getOrganization(project.organizationId);
+        if (org) {
+          const { canAccessModel } = await import("./tierLimits");
+          const tier = org.subscriptionTier || "free";
+          
+          if (!canAccessModel(tier, provider, model || "gpt-4o-mini")) {
+            return res.status(403).json({ 
+              error: `Your ${tier} plan doesn't support ${provider}/${model}. Upgrade to access this model.`,
+              tierRequired: provider === "openai" ? "free" : "starter"
+            });
+          }
+        }
       }
 
       const { runPromptOnce } = await import("./services/prompt-runner");

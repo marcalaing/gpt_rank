@@ -367,6 +367,252 @@ export default function LandingPage() {
           </div>
         </section>
 
+        {/* Social Proof Section */}
+        <section className="border-t bg-muted/50 py-12 md:py-20">
+          <div className="container mx-auto px-4">
+            <div className="mx-auto max-w-4xl text-center mb-12">
+              <h2 className="text-3xl font-bold mb-4">Trusted by Forward-Thinking Brands</h2>
+              <p className="text-lg text-muted-foreground">
+                Join companies already optimizing for AI-powered search
+              </p>
+            </div>
+
+            <div className="mx-auto max-w-5xl grid gap-8 md:grid-cols-3 mb-12">
+              <Card className="bg-background">
+                <CardContent className="pt-6">
+                  <div className="flex gap-1 mb-3">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <span key={star} className="text-yellow-500">★</span>
+                    ))}
+                  </div>
+                  <p className="text-sm mb-4 italic">
+                    "GPT Rank helped us discover we were invisible in AI search results. Within 30 days, 
+                    we improved our visibility score from 12 to 67. Game changer for organic discovery."
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-semibold">
+                      SM
+                    </div>
+                    <div>
+                      <div className="font-semibold text-sm">Sarah Mitchell</div>
+                      <div className="text-xs text-muted-foreground">VP Marketing, TechFlow</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-background">
+                <CardContent className="pt-6">
+                  <div className="flex gap-1 mb-3">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <span key={star} className="text-yellow-500">★</span>
+                    ))}
+                  </div>
+                  <p className="text-sm mb-4 italic">
+                    "As an agency managing 15 clients, GPT Rank's white-label reports are invaluable. 
+                    We can now track AI visibility alongside SEO metrics and show clients real ROI."
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-semibold">
+                      DL
+                    </div>
+                    <div>
+                      <div className="font-semibold text-sm">David Lee</div>
+                      <div className="text-xs text-muted-foreground">Founder, Growth Labs Agency</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-background">
+                <CardContent className="pt-6">
+                  <div className="flex gap-1 mb-3">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <span key={star} className="text-yellow-500">★</span>
+                    ))}
+                  </div>
+                  <p className="text-sm mb-4 italic">
+                    "We were getting beaten by competitors in ChatGPT recommendations. 
+                    GPT Rank showed us exactly why and how to fix it. Mention rate went from 8% to 45%."
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-semibold">
+                      JC
+                    </div>
+                    <div>
+                      <div className="font-semibold text-sm">Jessica Chen</div>
+                      <div className="text-xs text-muted-foreground">Head of Growth, Buildrr</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Trust indicators */}
+            <div className="flex flex-wrap justify-center gap-8 items-center text-muted-foreground text-sm">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-green-500" />
+                <span>No credit card required</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-green-500" />
+                <span>Cancel anytime</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-green-500" />
+                <span>7-day free trial on paid plans</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Pricing Preview Section */}
+        <section className="border-t py-12 md:py-20">
+          <div className="container mx-auto px-4">
+            <div className="mx-auto max-w-4xl text-center mb-12">
+              <h2 className="text-3xl font-bold mb-4">Simple, Transparent Pricing</h2>
+              <p className="text-lg text-muted-foreground">
+                Start free, upgrade when you're ready
+              </p>
+            </div>
+
+            <div className="mx-auto max-w-6xl grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+              <Card className="border-2">
+                <CardHeader>
+                  <CardTitle className="text-xl">Free</CardTitle>
+                  <div className="pt-4">
+                    <span className="text-4xl font-bold">$0</span>
+                    <span className="text-muted-foreground">/month</span>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary" />
+                    <span>1 Brand</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary" />
+                    <span>5 Prompts</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary" />
+                    <span>ChatGPT only</span>
+                  </div>
+                  <div className="pt-4">
+                    <Link href="/login">
+                      <Button variant="outline" className="w-full">
+                        Start Free
+                      </Button>
+                    </Link>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-2 border-primary shadow-lg">
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+                  <Badge className="px-4 py-1">Most Popular</Badge>
+                </div>
+                <CardHeader>
+                  <CardTitle className="text-xl">Starter</CardTitle>
+                  <div className="pt-4">
+                    <span className="text-4xl font-bold">$29</span>
+                    <span className="text-muted-foreground">/month</span>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary" />
+                    <span>3 Brands</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary" />
+                    <span>20 Prompts each</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary" />
+                    <span>All AI models</span>
+                  </div>
+                  <div className="pt-4">
+                    <Link href="/login">
+                      <Button className="w-full">
+                        Start Trial
+                      </Button>
+                    </Link>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-2">
+                <CardHeader>
+                  <CardTitle className="text-xl">Pro</CardTitle>
+                  <div className="pt-4">
+                    <span className="text-4xl font-bold">$79</span>
+                    <span className="text-muted-foreground">/month</span>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary" />
+                    <span>10 Brands</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary" />
+                    <span>100 Prompts each</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary" />
+                    <span>White-label reports</span>
+                  </div>
+                  <div className="pt-4">
+                    <Link href="/login">
+                      <Button variant="outline" className="w-full">
+                        Start Trial
+                      </Button>
+                    </Link>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-2">
+                <CardHeader>
+                  <CardTitle className="text-xl">Enterprise</CardTitle>
+                  <div className="pt-4">
+                    <span className="text-4xl font-bold">$299</span>
+                    <span className="text-muted-foreground">/month</span>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary" />
+                    <span>Unlimited brands</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary" />
+                    <span>Custom limits</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary" />
+                    <span>Dedicated support</span>
+                  </div>
+                  <div className="pt-4">
+                    <Button variant="outline" className="w-full">
+                      Contact Sales
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="text-center mt-8">
+              <Link href="/pricing">
+                <Button variant="link" size="lg">
+                  See full pricing comparison <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </section>
+
         {/* Features Section */}
         <section className="border-t bg-muted/50 py-12 md:py-20">
           <div className="container mx-auto px-4">

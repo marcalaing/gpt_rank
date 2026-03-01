@@ -18,20 +18,21 @@ const plans = [
       "1 Brand/Project",
       "5 Search prompts",
       "50 AI checks per month",
-      "Basic AI models",
+      "ChatGPT (gpt-4o-mini) only",
       "Visibility scores & insights",
       "Community support",
     ],
     limitations: [
       "Single brand tracking only",
       "No historical data",
+      "Limited to ChatGPT model",
     ],
     cta: "Start Free — No Card Required",
     popular: false,
     highlight: "Great for testing the waters",
   },
   {
-    name: "Pro",
+    name: "Starter",
     price: "$29",
     period: "/month",
     description: "For serious marketers tracking brand visibility",
@@ -41,7 +42,7 @@ const plans = [
       "3 Brands/Projects",
       "20 Search prompts per brand",
       "500 AI checks per month",
-      "Latest AI models (GPT-4, Claude 3, etc.)",
+      "ChatGPT, Claude, Gemini & Perplexity",
       "Full visibility analytics",
       "Historical trend tracking",
       "Competitor mentions",
@@ -55,7 +56,7 @@ const plans = [
     highlight: "Most popular for growing brands",
   },
   {
-    name: "Max",
+    name: "Pro",
     price: "$79",
     period: "/month",
     description: "For agencies managing multiple client brands",
@@ -65,7 +66,7 @@ const plans = [
       "10 Brands/Projects",
       "100 Search prompts per brand",
       "2,500 AI checks per month",
-      "All premium AI models",
+      "All AI models + latest versions",
       "Advanced analytics dashboard",
       "Multi-month trend analysis",
       "Full competitor intelligence",
@@ -78,7 +79,33 @@ const plans = [
     limitations: [],
     cta: "Start 7-Day Free Trial",
     popular: false,
-    highlight: "Best for agencies & enterprises",
+    highlight: "Best for agencies",
+  },
+  {
+    name: "Enterprise",
+    price: "$299",
+    period: "/month",
+    description: "For large organizations with custom needs",
+    tier: "enterprise",
+    icon: Rocket,
+    features: [
+      "Unlimited Brands/Projects",
+      "Unlimited Search prompts",
+      "10,000+ AI checks per month",
+      "All AI models + beta access",
+      "Custom analytics & reporting",
+      "Dedicated success manager",
+      "Custom integrations",
+      "SLA guarantees",
+      "Team training & onboarding",
+      "White-label platform option",
+      "Custom data retention",
+      "24/7 priority support",
+    ],
+    limitations: [],
+    cta: "Contact Sales",
+    popular: false,
+    highlight: "Custom solutions at scale",
   },
 ];
 
@@ -128,7 +155,7 @@ export default function PricingPage() {
         </div>
 
         {/* Pricing Cards */}
-        <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto mb-16">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 max-w-7xl mx-auto mb-16">
           {plans.map((plan) => {
             const IconComponent = plan.icon;
             return (
@@ -237,8 +264,9 @@ export default function PricingPage() {
                 <tr className="border-b">
                   <th className="text-left py-4 px-4 font-semibold">Feature</th>
                   <th className="text-center py-4 px-4 font-semibold">Free</th>
+                  <th className="text-center py-4 px-4 font-semibold">Starter</th>
                   <th className="text-center py-4 px-4 font-semibold">Pro</th>
-                  <th className="text-center py-4 px-4 font-semibold">Max</th>
+                  <th className="text-center py-4 px-4 font-semibold">Enterprise</th>
                 </tr>
               </thead>
               <tbody>
@@ -247,28 +275,33 @@ export default function PricingPage() {
                   <td className="text-center py-3 px-4 text-sm text-muted-foreground">1</td>
                   <td className="text-center py-3 px-4 text-sm font-semibold">3</td>
                   <td className="text-center py-3 px-4 text-sm font-semibold">10</td>
+                  <td className="text-center py-3 px-4 text-sm font-semibold">Unlimited</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-3 px-4 text-sm">Prompts per brand</td>
                   <td className="text-center py-3 px-4 text-sm text-muted-foreground">5</td>
                   <td className="text-center py-3 px-4 text-sm font-semibold">20</td>
                   <td className="text-center py-3 px-4 text-sm font-semibold">100</td>
+                  <td className="text-center py-3 px-4 text-sm font-semibold">Unlimited</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-3 px-4 text-sm">AI checks per month</td>
                   <td className="text-center py-3 px-4 text-sm text-muted-foreground">50</td>
                   <td className="text-center py-3 px-4 text-sm font-semibold">500</td>
                   <td className="text-center py-3 px-4 text-sm font-semibold">2,500</td>
+                  <td className="text-center py-3 px-4 text-sm font-semibold">10,000+</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-3 px-4 text-sm">AI Model Selection</td>
-                  <td className="text-center py-3 px-4 text-sm text-muted-foreground">Basic</td>
-                  <td className="text-center py-3 px-4 text-sm">Latest (GPT-4, etc.)</td>
-                  <td className="text-center py-3 px-4 text-sm">All Premium</td>
+                  <td className="text-center py-3 px-4 text-sm text-muted-foreground">ChatGPT only</td>
+                  <td className="text-center py-3 px-4 text-sm">All models</td>
+                  <td className="text-center py-3 px-4 text-sm">All + latest</td>
+                  <td className="text-center py-3 px-4 text-sm">All + beta</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-3 px-4 text-sm">Historical Tracking</td>
                   <td className="text-center py-3 px-4">—</td>
+                  <td className="text-center py-3 px-4"><Check className="h-4 w-4 text-primary mx-auto" /></td>
                   <td className="text-center py-3 px-4"><Check className="h-4 w-4 text-primary mx-auto" /></td>
                   <td className="text-center py-3 px-4"><Check className="h-4 w-4 text-primary mx-auto" /></td>
                 </tr>
@@ -277,10 +310,12 @@ export default function PricingPage() {
                   <td className="text-center py-3 px-4">—</td>
                   <td className="text-center py-3 px-4"><Check className="h-4 w-4 text-primary mx-auto" /></td>
                   <td className="text-center py-3 px-4"><Check className="h-4 w-4 text-primary mx-auto" /></td>
+                  <td className="text-center py-3 px-4"><Check className="h-4 w-4 text-primary mx-auto" /></td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-3 px-4 text-sm">Email Alerts</td>
                   <td className="text-center py-3 px-4">—</td>
+                  <td className="text-center py-3 px-4"><Check className="h-4 w-4 text-primary mx-auto" /></td>
                   <td className="text-center py-3 px-4"><Check className="h-4 w-4 text-primary mx-auto" /></td>
                   <td className="text-center py-3 px-4"><Check className="h-4 w-4 text-primary mx-auto" /></td>
                 </tr>
@@ -289,9 +324,18 @@ export default function PricingPage() {
                   <td className="text-center py-3 px-4">—</td>
                   <td className="text-center py-3 px-4">—</td>
                   <td className="text-center py-3 px-4"><Check className="h-4 w-4 text-primary mx-auto" /></td>
+                  <td className="text-center py-3 px-4"><Check className="h-4 w-4 text-primary mx-auto" /></td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-3 px-4 text-sm">API Access</td>
+                  <td className="text-center py-3 px-4">—</td>
+                  <td className="text-center py-3 px-4">—</td>
+                  <td className="text-center py-3 px-4"><Check className="h-4 w-4 text-primary mx-auto" /></td>
+                  <td className="text-center py-3 px-4"><Check className="h-4 w-4 text-primary mx-auto" /></td>
+                </tr>
+                <tr className="border-b">
+                  <td className="py-3 px-4 text-sm">Dedicated Support</td>
+                  <td className="text-center py-3 px-4">—</td>
                   <td className="text-center py-3 px-4">—</td>
                   <td className="text-center py-3 px-4">—</td>
                   <td className="text-center py-3 px-4"><Check className="h-4 w-4 text-primary mx-auto" /></td>
