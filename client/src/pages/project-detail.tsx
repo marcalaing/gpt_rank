@@ -417,6 +417,27 @@ export default function ProjectDetailPage() {
                   </p>
                 </CardContent>
               </Card>
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between gap-4 flex-wrap">
+                    <CardTitle className="flex items-center gap-2">
+                      <Lightbulb className="h-5 w-5" />
+                      Recommendations
+                    </CardTitle>
+                    <Link href={`/app/projects/${projectId}/recommendations`}>
+                      <Button variant="outline" size="sm" data-testid="button-view-recommendations">
+                        <Eye className="h-4 w-4 mr-2" />
+                        View
+                      </Button>
+                    </Link>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground text-sm">
+                    Get AI-powered insights to improve visibility.
+                  </p>
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
 
