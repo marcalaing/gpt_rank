@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -78,10 +78,12 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="flex items-center justify-between gap-4 p-4 border-b">
-        <div className="flex items-center gap-2">
-          <BarChart3 className="h-6 w-6 text-primary" />
-          <span className="text-lg font-semibold">GPT Rank</span>
-        </div>
+        <Link href="/">
+          <a className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <BarChart3 className="h-6 w-6 text-primary" />
+            <span className="text-lg font-semibold">GPT Rank</span>
+          </a>
+        </Link>
         <ThemeToggle />
       </header>
 

@@ -1729,6 +1729,164 @@ If you know of relevant sources or websites, include them as citations.`;
     }
   });
 
+  // Run all prompts for a project
+  app.post("/api/projects/:projectId/run-all", requireAuth, async (req, res) => {
+    try {
+      const hasAccess = await verifyProjectAccess(req.session.userId!, req.params.projectId);
+      if (!hasAccess) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const prompts = await storage.getPromptsByProject(req.params.projectId);
+      if (prompts.length === 0) {
+        return res.json({ 
+          success: true, 
+          message: "No prompts to run",
+          results: [] 
+        });
+      }
+
+      // Check budget limits
+      if (project.monthlyBudgetHard && project.currentMonthUsage !== null) {
+        if (project.currentMonthUsage >= project.monthlyBudgetHard) {
+          return res.status(403).json({ 
+            error: "Monthly budget limit reached. Increase your budget limit in project settings to continue." 
+          });
+        }
+      }
+
+      // Check tier limits
+      const orgs = await storage.getOrganizationsByUser(req.session.userId!);
+      const org = orgs[0];
+      const tier = org?.subscriptionTier || "free";
+      const limits = getTierLimits(tier);
+      
+      if (limits.runsPerMonth !== Infinity) {
+        const currentMonthRuns = await storage.getMonthlyRunCountByOrg(org.id);
+        if (currentMonthRuns + prompts.length > limits.runsPerMonth) {
+          return res.status(403).json({ 
+            error: `Running all prompts would exceed monthly limit. Your ${tier} plan allows ${limits.runsPerMonth} runs per month. Currently used: ${currentMonthRuns}.` 
+          });
+        }
+      }
+
+      // Run all prompts (only active ones)
+      const { runPromptOnce } = await import("./services/prompt-runner");
+      const results = [];
+      let totalCost = 0;
+
+      for (const prompt of prompts) {
+        // Skip inactive prompts
+        if (!prompt.isActive) {
+          results.push({
+            promptId: prompt.id,
+            promptName: prompt.name,
+            success: false,
+            skipped: true,
+            reason: "Prompt is inactive",
+          });
+          continue;
+        }
+
+        // Check budget before each run
+        const currentUsage = (project.currentMonthUsage || 0) + totalCost;
+        if (project.monthlyBudgetHard && currentUsage >= project.monthlyBudgetHard) {
+          results.push({
+            promptId: prompt.id,
+            promptName: prompt.name,
+            success: false,
+            skipped: true,
+            reason: "Budget limit reached",
+          });
+          continue;
+        }
+
+        try {
+          const result = await runPromptOnce(prompt.id, "openai", "gpt-4o-mini");
+          
+          if (result.success && result.promptRun) {
+            if (result.promptRun.cost) {
+              totalCost += result.promptRun.cost;
+            }
+
+            results.push({
+              promptId: prompt.id,
+              promptName: prompt.name,
+              success: true,
+              promptRunId: result.promptRun.id,
+              cost: result.promptRun.cost,
+            });
+
+            // Create audit log entry
+            await storage.createAuditLog({
+              projectId: project.id,
+              userId: req.session.userId!,
+              entityType: "prompt_run",
+              entityId: result.promptRun.id,
+              action: "create",
+              newValue: { promptId: prompt.id, provider: "openai", model: "gpt-4o-mini", triggeredBy: "run-all" },
+            });
+          } else {
+            results.push({
+              promptId: prompt.id,
+              promptName: prompt.name,
+              success: false,
+              error: result.error || "Unknown error",
+            });
+          }
+        } catch (error) {
+          results.push({
+            promptId: prompt.id,
+            promptName: prompt.name,
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
+      }
+
+      // Update project usage tracking
+      if (totalCost > 0) {
+        const newUsage = (project.currentMonthUsage || 0) + totalCost;
+        await storage.updateProject(project.id, { currentMonthUsage: newUsage });
+        
+        // Check soft budget and create alert if needed
+        if (project.monthlyBudgetSoft && newUsage >= project.monthlyBudgetSoft) {
+          const alertRules = await storage.getAlertRulesByProject(project.id);
+          const budgetAlert = alertRules.find(r => r.type === "budget_exceeded" && r.isActive);
+          if (budgetAlert) {
+            await storage.createAlertEvent({
+              alertRuleId: budgetAlert.id,
+              message: `Monthly budget soft limit reached: $${newUsage.toFixed(2)} of $${project.monthlyBudgetSoft} spent`,
+              metadata: { currentUsage: newUsage, softLimit: project.monthlyBudgetSoft },
+            });
+          }
+        }
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      const failedCount = results.filter(r => !r.success && !r.skipped).length;
+      const skippedCount = results.filter(r => r.skipped).length;
+
+      res.json({
+        success: true,
+        message: `Completed ${successCount} runs, ${failedCount} failed, ${skippedCount} skipped`,
+        results,
+        totalCost,
+        successCount,
+        failedCount,
+        skippedCount,
+      });
+    } catch (error) {
+      console.error("Run all prompts error:", error);
+      res.status(500).json({ error: "Failed to run all prompts" });
+    }
+  });
+
   // Audit Log API
   app.get("/api/projects/:projectId/audit-log", requireAuth, async (req, res) => {
     try {

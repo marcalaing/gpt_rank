@@ -20,6 +20,7 @@ import AnalyticsPage from "@/pages/analytics";
 import BillingPage from "@/pages/billing";
 import DiscoverPromptsPage from "@/pages/discover-prompts";
 import RecommendationsPage from "@/pages/recommendations";
+import AlertsPage from "@/pages/alerts";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated } = useAuth();
@@ -52,6 +53,9 @@ function Router() {
       </Route>
       <Route path="/app">
         <ProtectedRoute component={DashboardPage} />
+      </Route>
+      <Route path="/app/alerts">
+        <ProtectedRoute component={AlertsPage} />
       </Route>
       <Route path="/app/projects">
         <ProtectedRoute component={ProjectsPage} />
