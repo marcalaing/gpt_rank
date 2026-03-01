@@ -656,7 +656,7 @@ If you know of relevant sources or websites, include them as citations.`;
   // Dashboard
   app.get("/api/dashboard/stats", requireAuth, async (req, res) => {
     try {
-      const stats = await storage.getDashboardStats(req.session.userId!);
+      const stats = await storage.getExtendedDashboardStats(req.session.userId!);
       res.json(stats);
     } catch (error) {
       console.error("Dashboard stats error:", error);

@@ -116,6 +116,43 @@ export interface IStorage {
     recentRuns: { id: string; promptName: string; provider: string; executedAt: string; citationCount: number }[];
   }>;
   getProjectsWithStats(userId: string): Promise<(Project & { promptCount: number; competitorCount: number })[]>;
+  getExtendedDashboardStats(userId: string): Promise<{
+    overallVisibilityScore: number;
+    scoreTrend: { date: string; score: number }[];
+    brandMentionRate: number;
+    activeProjects: number;
+    activePrompts: number;
+    projects: {
+      id: string;
+      name: string;
+      domain: string | null;
+      currentScore: number | null;
+      scoreDelta: number | null;
+      lastRunAt: string | null;
+      promptCount: number;
+    }[];
+    recentRuns: {
+      id: string;
+      promptId: string;
+      promptName: string;
+      projectId: string;
+      projectName: string;
+      provider: string;
+      score: number;
+      executedAt: string;
+    }[];
+    recentAlerts: {
+      id: string;
+      type: string;
+      message: string;
+      createdAt: string;
+    }[];
+    usage: {
+      currentMonthSpend: number;
+      budgetLimit: number | null;
+      subscriptionTier: string;
+    } | null;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -481,6 +518,276 @@ export class DatabaseStorage implements IStorage {
     }
 
     return result;
+  }
+
+  async getExtendedDashboardStats(userId: string): Promise<{
+    overallVisibilityScore: number;
+    scoreTrend: { date: string; score: number }[];
+    brandMentionRate: number;
+    activeProjects: number;
+    activePrompts: number;
+    projects: {
+      id: string;
+      name: string;
+      domain: string | null;
+      currentScore: number | null;
+      scoreDelta: number | null;
+      lastRunAt: string | null;
+      promptCount: number;
+    }[];
+    recentRuns: {
+      id: string;
+      promptId: string;
+      promptName: string;
+      projectId: string;
+      projectName: string;
+      provider: string;
+      score: number;
+      executedAt: string;
+    }[];
+    recentAlerts: {
+      id: string;
+      type: string;
+      message: string;
+      createdAt: string;
+    }[];
+    usage: {
+      currentMonthSpend: number;
+      budgetLimit: number | null;
+      subscriptionTier: string;
+    } | null;
+  }> {
+    const userProjects = await this.getProjectsByUser(userId);
+    
+    if (userProjects.length === 0) {
+      return {
+        overallVisibilityScore: 0,
+        scoreTrend: [],
+        brandMentionRate: 0,
+        activeProjects: 0,
+        activePrompts: 0,
+        projects: [],
+        recentRuns: [],
+        recentAlerts: [],
+        usage: null,
+      };
+    }
+
+    const projectIds = userProjects.map(p => p.id);
+    
+    // Calculate per-project summaries with scores and deltas
+    const projectSummaries = await Promise.all(
+      userProjects.map(async (project) => {
+        const projectPrompts = await this.getPromptsByProject(project.id);
+        
+        // Get recent scores (last 14 days for current, previous 14 for delta)
+        const now = new Date();
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+        
+        const recentScores = await db.select()
+          .from(scores)
+          .where(
+            and(
+              eq(scores.projectId, project.id),
+              eq(scores.entityType, "brand"),
+              sql`${scores.calculatedAt} >= ${sevenDaysAgo}`
+            )
+          )
+          .orderBy(desc(scores.calculatedAt));
+        
+        const previousScores = await db.select()
+          .from(scores)
+          .where(
+            and(
+              eq(scores.projectId, project.id),
+              eq(scores.entityType, "brand"),
+              sql`${scores.calculatedAt} >= ${fourteenDaysAgo} AND ${scores.calculatedAt} < ${sevenDaysAgo}`
+            )
+          );
+        
+        const currentScore = recentScores.length > 0 
+          ? recentScores.reduce((sum, s) => sum + s.score, 0) / recentScores.length 
+          : null;
+        
+        const previousScore = previousScores.length > 0 
+          ? previousScores.reduce((sum, s) => sum + s.score, 0) / previousScores.length 
+          : null;
+        
+        const scoreDelta = currentScore !== null && previousScore !== null 
+          ? currentScore - previousScore 
+          : null;
+        
+        // Get last run timestamp
+        const lastRun = await db.select()
+          .from(promptRuns)
+          .innerJoin(prompts, eq(promptRuns.promptId, prompts.id))
+          .where(eq(prompts.projectId, project.id))
+          .orderBy(desc(promptRuns.executedAt))
+          .limit(1);
+        
+        return {
+          id: project.id,
+          name: project.name,
+          domain: project.domain,
+          currentScore: currentScore !== null ? Math.round(currentScore) : null,
+          scoreDelta: scoreDelta !== null ? Math.round(scoreDelta * 10) / 10 : null,
+          lastRunAt: lastRun[0]?.prompt_runs?.executedAt?.toISOString() || null,
+          promptCount: projectPrompts.length,
+        };
+      })
+    );
+    
+    // Calculate overall metrics
+    const scoresWithValues = projectSummaries.filter(p => p.currentScore !== null);
+    const overallVisibilityScore = scoresWithValues.length > 0
+      ? Math.round(scoresWithValues.reduce((sum, p) => sum + p.currentScore!, 0) / scoresWithValues.length)
+      : 0;
+    
+    // Get score trend (last 30 days)
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const trendScores = await db.select()
+      .from(scores)
+      .where(
+        and(
+          sql`${scores.projectId} = ANY(${projectIds})`,
+          eq(scores.entityType, "brand"),
+          sql`${scores.calculatedAt} >= ${thirtyDaysAgo}`
+        )
+      )
+      .orderBy(desc(scores.calculatedAt));
+    
+    // Group scores by date and average
+    const scoresByDate: Record<string, number[]> = {};
+    trendScores.forEach(score => {
+      const date = score.calculatedAt.toISOString().split('T')[0];
+      if (!scoresByDate[date]) scoresByDate[date] = [];
+      scoresByDate[date].push(score.score);
+    });
+    
+    const scoreTrend = Object.entries(scoresByDate)
+      .map(([date, scores]) => ({
+        date,
+        score: Math.round(scores.reduce((sum, s) => sum + s, 0) / scores.length),
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(-30); // Keep last 30 days
+    
+    // Calculate brand mention rate (percentage of runs where brand was mentioned)
+    const allRunsCount = await db.select({ count: count() })
+      .from(promptRuns)
+      .innerJoin(prompts, eq(promptRuns.promptId, prompts.id))
+      .where(sql`${prompts.projectId} = ANY(${projectIds})`);
+    
+    const runsWithBrandMentions = await db.select({ count: count() })
+      .from(scores)
+      .where(
+        and(
+          sql`${scores.projectId} = ANY(${projectIds})`,
+          eq(scores.entityType, "brand"),
+          sql`${scores.mentionCount} > 0`
+        )
+      );
+    
+    const brandMentionRate = allRunsCount[0]?.count > 0
+      ? Math.round((runsWithBrandMentions[0]?.count / allRunsCount[0]?.count) * 100)
+      : 0;
+    
+    // Count active prompts
+    const activePromptsCount = await db.select({ count: count() })
+      .from(prompts)
+      .where(
+        and(
+          sql`${prompts.projectId} = ANY(${projectIds})`,
+          eq(prompts.isActive, true)
+        )
+      );
+    
+    // Get recent runs (last 3 across all projects)
+    const recentRunsData = await db.select({
+      id: promptRuns.id,
+      promptId: prompts.id,
+      promptName: prompts.name,
+      projectId: projects.id,
+      projectName: projects.name,
+      provider: promptRuns.provider,
+      executedAt: promptRuns.executedAt,
+    })
+      .from(promptRuns)
+      .innerJoin(prompts, eq(promptRuns.promptId, prompts.id))
+      .innerJoin(projects, eq(prompts.projectId, projects.id))
+      .where(sql`${projects.id} = ANY(${projectIds})`)
+      .orderBy(desc(promptRuns.executedAt))
+      .limit(3);
+    
+    // Get scores for recent runs
+    const recentRuns = await Promise.all(
+      recentRunsData.map(async (run) => {
+        const runScores = await db.select()
+          .from(scores)
+          .where(
+            and(
+              eq(scores.promptRunId, run.id),
+              eq(scores.entityType, "brand")
+            )
+          );
+        
+        const avgScore = runScores.length > 0
+          ? Math.round(runScores.reduce((sum, s) => sum + s.score, 0) / runScores.length)
+          : 0;
+        
+        return {
+          id: run.id,
+          promptId: run.promptId,
+          promptName: run.promptName,
+          projectId: run.projectId,
+          projectName: run.projectName,
+          provider: run.provider,
+          score: avgScore,
+          executedAt: run.executedAt.toISOString(),
+        };
+      })
+    );
+    
+    // Get recent alerts (last 5)
+    const recentAlertsData = await db.select({
+      id: alertEvents.id,
+      type: alertRules.type,
+      message: alertEvents.message,
+      createdAt: alertEvents.createdAt,
+    })
+      .from(alertEvents)
+      .innerJoin(alertRules, eq(alertEvents.alertRuleId, alertRules.id))
+      .where(sql`${alertRules.projectId} = ANY(${projectIds})`)
+      .orderBy(desc(alertEvents.createdAt))
+      .limit(5);
+    
+    const recentAlerts = recentAlertsData.map(alert => ({
+      id: alert.id,
+      type: alert.type,
+      message: alert.message,
+      createdAt: alert.createdAt.toISOString(),
+    }));
+    
+    // Get usage data (from first organization)
+    const orgs = await this.getOrganizationsByUser(userId);
+    const usage = orgs.length > 0 ? {
+      currentMonthSpend: userProjects.reduce((sum, p) => sum + (p.currentMonthUsage || 0), 0),
+      budgetLimit: userProjects[0]?.monthlyBudgetHard || null,
+      subscriptionTier: orgs[0].subscriptionTier || "free",
+    } : null;
+    
+    return {
+      overallVisibilityScore,
+      scoreTrend,
+      brandMentionRate,
+      activeProjects: userProjects.length,
+      activePrompts: activePromptsCount[0]?.count || 0,
+      projects: projectSummaries,
+      recentRuns,
+      recentAlerts,
+      usage,
+    };
   }
 
   // Scheduler methods
