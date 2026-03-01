@@ -115,7 +115,7 @@ export interface IStorage {
     totalCitations: number;
     recentRuns: { id: string; promptName: string; provider: string; executedAt: string; citationCount: number }[];
   }>;
-  getProjectsWithStats(userId: string): Promise<(Project & { promptCount: number; brandCount: number; competitorCount: number })[]>;
+  getProjectsWithStats(userId: string): Promise<(Project & { promptCount: number; competitorCount: number })[]>;
 }
 
 export class DatabaseStorage implements IStorage {

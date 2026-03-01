@@ -49,10 +49,8 @@ export async function runPromptOnce(
       }
     }
 
-    const brands = await storage.getBrandsByProject(prompt.projectId);
     const competitors = await storage.getCompetitorsByProject(prompt.projectId);
 
-    const brandNames = brands.flatMap(b => [b.name, ...(b.synonyms || [])]);
     const competitorNames = competitors.flatMap(c => [c.name, ...(c.synonyms || [])]);
 
     const insertData: InsertPromptRun = {
@@ -70,13 +68,12 @@ export async function runPromptOnce(
     const adapter = getProviderAdapter(provider, model);
     
     const response = await adapter.runPrompt(prompt.template, {
-      brandNames,
       competitorNames,
       locale: prompt.locale || "en",
     });
 
     // Use LLM-based extraction with regex fallback
-    const extraction = await extractWithLLM(response.rawText, brands, competitors, true);
+    const extraction = await extractWithLLM(response.rawText, [], competitors, true);
 
     const endTime = Date.now();
     const duration = endTime - startTime;
@@ -119,30 +116,7 @@ export async function runPromptOnce(
       }
     }
 
-    if (brands.length > 0) {
-      const primaryBrand = brands[0];
-      const mentionScore = Math.min(extraction.brandMentionCount * 20, 60);
-      const sentimentBonus = extraction.sentiment === "positive" ? 20 : extraction.sentiment === "negative" ? -10 : 0;
-      const citationBonus = extraction.citedDomains.some(d => 
-        primaryBrand.domain && d.domain.includes(primaryBrand.domain.replace(/^www\./, ''))
-      ) ? 20 : 0;
-      
-      const visibilityScore = Math.max(0, Math.min(100, mentionScore + sentimentBonus + citationBonus));
-
-      const scoreData: InsertScore = {
-        projectId: prompt.projectId,
-        promptRunId,
-        entityType: "brand",
-        entityId: primaryBrand.id,
-        provider,
-        score: visibilityScore,
-        mentionCount: extraction.brandMentionCount,
-        sentimentScore: extraction.sentiment === "positive" ? 0.5 : extraction.sentiment === "negative" ? -0.5 : 0,
-        positionScore: null,
-        citationScore: citationBonus,
-      };
-      await storage.createScore(scoreData);
-    }
+    // Brand scoring removed - brands no longer supported
 
     return {
       promptRun: updatedRun || promptRun,

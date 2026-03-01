@@ -679,21 +679,18 @@ If you know of relevant sources or websites, include them as citations.`;
         });
       }
 
-      const allScores: Array<{ score: number; provider: string; calculatedAt: Date; brandName?: string }> = [];
+      const allScores: Array<{ score: number; provider: string; calculatedAt: Date }> = [];
       const providerScores: Record<string, number[]> = {};
       const domainCounts: Record<string, number> = {};
 
       for (const project of projects) {
         const scores = await storage.getScoresByProject(project.id);
-        const brands = await storage.getBrandsByProject(project.id);
-        const brandMap = new Map(brands.map(b => [b.id, b.name]));
         
         for (const score of scores) {
           allScores.push({
             score: score.score,
             provider: score.provider,
             calculatedAt: score.calculatedAt,
-            brandName: score.entityType === 'brand' ? brandMap.get(score.entityId) : undefined,
           });
           
           if (!providerScores[score.provider]) {
@@ -732,7 +729,6 @@ If you know of relevant sources or websites, include them as citations.`;
         .map(s => ({
           score: s.score,
           provider: s.provider,
-          brandName: s.brandName,
           calculatedAt: s.calculatedAt,
         }));
 
@@ -830,121 +826,6 @@ If you know of relevant sources or websites, include them as citations.`;
     } catch (error) {
       console.error("Delete project error:", error);
       res.status(500).json({ error: "Failed to delete project" });
-    }
-  });
-
-  // Brands - with authorization check
-  app.get("/api/projects/:projectId/brands", requireAuth, async (req, res) => {
-    try {
-      const hasAccess = await verifyProjectAccess(req.session.userId!, req.params.projectId);
-      if (!hasAccess) {
-        return res.status(403).json({ error: "Access denied" });
-      }
-
-      const brands = await storage.getBrandsByProject(req.params.projectId);
-      res.json(brands);
-    } catch (error) {
-      console.error("Get brands error:", error);
-      res.status(500).json({ error: "Failed to get brands" });
-    }
-  });
-
-  app.post("/api/projects/:projectId/brands", requireAuth, async (req, res) => {
-    try {
-      const hasAccess = await verifyProjectAccess(req.session.userId!, req.params.projectId);
-      if (!hasAccess) {
-        return res.status(403).json({ error: "Access denied" });
-      }
-
-      const data = insertBrandSchema.omit({ projectId: true }).parse(req.body);
-      const brand = await storage.createBrand({
-        ...data,
-        projectId: req.params.projectId,
-      });
-      
-      // Audit log
-      await storage.createAuditLog({
-        projectId: req.params.projectId,
-        userId: req.session.userId!,
-        entityType: "brand",
-        entityId: brand.id,
-        action: "create",
-        newValue: { name: brand.name, domain: brand.domain },
-      });
-      
-      // Run brand onboarding in background (don't block response)
-      const runOnboarding = async () => {
-        try {
-          const { runBrandOnboarding } = await import("./services/brand-onboarding");
-          const { runPromptOnce } = await import("./services/prompt-runner");
-          
-          const result = await runBrandOnboarding(brand.name, brand.domain);
-          
-          // Check tier limits for prompts
-          const orgs = await storage.getOrganizationsByUser(req.session.userId!);
-          const org = orgs[0];
-          const tier = org?.subscriptionTier || "free";
-          const limits = getTierLimits(tier);
-          
-          const existingPrompts = await storage.getPromptsByProject(req.params.projectId);
-          const remainingSlots = limits.promptsPerProject - existingPrompts.length;
-          
-          if (remainingSlots <= 0) {
-            console.log("Brand onboarding: No prompt slots available");
-            return;
-          }
-          
-          const queriesToCreate = result.queries.slice(0, remainingSlots);
-          const { estimateVolumeScore } = await import("./services/volume-score");
-          
-          // Create prompts from generated queries with volume scores
-          for (const query of queriesToCreate) {
-            // Estimate volume score for each query
-            let volumeScore = 5;
-            let aiLikeliness = 5;
-            try {
-              const volumeResult = await estimateVolumeScore(query.query);
-              volumeScore = volumeResult.volumeScore;
-              aiLikeliness = volumeResult.aiLikeliness;
-            } catch (volError) {
-              console.error("Failed to estimate volume:", volError);
-            }
-            
-            const prompt = await storage.createPrompt({
-              name: query.query.substring(0, 50) + (query.query.length > 50 ? "..." : ""),
-              template: query.query,
-              projectId: req.params.projectId,
-              isActive: true,
-              scheduleEnabled: false,
-              tags: [query.intent, "auto-generated"],
-              volumeScore,
-              aiLikeliness,
-            });
-            
-            // Run visibility scoring for the prompt
-            try {
-              await runPromptOnce(prompt.id, "openai", "gpt-4o-mini");
-            } catch (runError) {
-              console.error("Failed to run prompt:", runError);
-            }
-          }
-          
-          console.log(`Brand onboarding complete: created ${queriesToCreate.length} prompts for ${brand.name}`);
-        } catch (onboardingError) {
-          console.error("Brand onboarding failed:", onboardingError);
-        }
-      };
-      
-      // Start onboarding without awaiting
-      runOnboarding();
-      
-      res.json({ ...brand, onboardingStarted: true });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: error.errors[0].message });
-      }
-      console.error("Create brand error:", error);
-      res.status(500).json({ error: "Failed to create brand" });
     }
   });
 
@@ -1123,10 +1004,6 @@ If you know of relevant sources or websites, include them as citations.`;
         organizationId: orgId,
       });
 
-      // Add brands to project1
-      await storage.createBrand({ name: "Acme Corp", domain: "acme.com", projectId: project1.id });
-      await storage.createBrand({ name: "Acme Products", domain: "products.acme.com", projectId: project1.id });
-
       // Add competitors to project1
       await storage.createCompetitor({ name: "Competitor A", domain: "competitora.com", projectId: project1.id });
       await storage.createCompetitor({ name: "Competitor B", domain: "competitorb.com", projectId: project1.id });
@@ -1251,7 +1128,6 @@ If you know of relevant sources or websites, include them as citations.`;
 
       const promptRuns = await storage.getPromptRunsByProject(req.params.projectId, 100);
       const projectScores = await storage.getScoresByProject(req.params.projectId, startDate);
-      const brands = await storage.getBrandsByProject(req.params.projectId);
       const competitors = await storage.getCompetitorsByProject(req.params.projectId);
 
       const runsInRange = promptRuns.filter(r => {
@@ -1450,21 +1326,8 @@ If you know of relevant sources or websites, include them as citations.`;
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const brands = await storage.getBrandsByProject(projectId);
-      const firstBrand = brands[0];
-      
-      if (!firstBrand) {
-        return res.status(400).json({ error: "No brand found in project. Add a brand first." });
-      }
-
-      const { discoverPrompts } = await import("./services/discover-prompts");
-      const prompts = await discoverPrompts({
-        brandName: firstBrand.name,
-        industry: firstBrand.domain || "Technology",
-        searchTerm,
-      });
-
-      res.json({ prompts, brandName: firstBrand.name });
+      // Brand functionality has been removed - discover prompts no longer supported
+      return res.status(400).json({ error: "Brand-based prompt discovery is no longer supported. Please create prompts manually." });
     } catch (error) {
       console.error("Discover prompts error:", error);
       res.status(500).json({ error: "Failed to discover prompts" });
