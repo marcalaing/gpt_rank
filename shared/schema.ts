@@ -63,6 +63,8 @@ export const projects = pgTable("projects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   description: text("description"),
+  domain: text("domain"), // brand domain (moved from brands table)
+  synonyms: text("synonyms").array(), // alternative names/spellings (moved from brands table)
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   monthlyBudgetSoft: real("monthly_budget_soft"), // soft limit in dollars
   monthlyBudgetHard: real("monthly_budget_hard"), // hard limit in dollars
@@ -73,7 +75,6 @@ export const projects = pgTable("projects", {
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
   organization: one(organizations, { fields: [projects.organizationId], references: [organizations.id] }),
-  brands: many(brands),
   competitors: many(competitors),
   prompts: many(prompts),
   scores: many(scores),

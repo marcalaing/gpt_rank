@@ -70,11 +70,6 @@ export interface IStorage {
   createProject(project: InsertProject): Promise<Project>;
   deleteProject(id: string): Promise<void>;
 
-  // Brands
-  getBrandsByProject(projectId: string): Promise<Brand[]>;
-  createBrand(brand: InsertBrand): Promise<Brand>;
-  deleteBrand(id: string): Promise<void>;
-
   // Competitors
   getCompetitorsByProject(projectId: string): Promise<Competitor[]>;
   createCompetitor(competitor: InsertCompetitor): Promise<Competitor>;
@@ -209,20 +204,6 @@ export class DatabaseStorage implements IStorage {
 
   async deleteProject(id: string): Promise<void> {
     await db.delete(projects).where(eq(projects.id, id));
-  }
-
-  // Brands
-  async getBrandsByProject(projectId: string): Promise<Brand[]> {
-    return db.select().from(brands).where(eq(brands.projectId, projectId));
-  }
-
-  async createBrand(brand: InsertBrand): Promise<Brand> {
-    const [created] = await db.insert(brands).values(brand).returning();
-    return created;
-  }
-
-  async deleteBrand(id: string): Promise<void> {
-    await db.delete(brands).where(eq(brands.id, id));
   }
 
   // Competitors
@@ -484,19 +465,17 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getProjectsWithStats(userId: string): Promise<(Project & { promptCount: number; brandCount: number; competitorCount: number })[]> {
+  async getProjectsWithStats(userId: string): Promise<(Project & { promptCount: number; competitorCount: number })[]> {
     const userProjects = await this.getProjectsByUser(userId);
-    const result: (Project & { promptCount: number; brandCount: number; competitorCount: number })[] = [];
+    const result: (Project & { promptCount: number; competitorCount: number })[] = [];
 
     for (const project of userProjects) {
       const projectPrompts = await this.getPromptsByProject(project.id);
-      const projectBrands = await this.getBrandsByProject(project.id);
       const projectCompetitors = await this.getCompetitorsByProject(project.id);
 
       result.push({
         ...project,
         promptCount: projectPrompts.length,
-        brandCount: projectBrands.length,
         competitorCount: projectCompetitors.length,
       });
     }
