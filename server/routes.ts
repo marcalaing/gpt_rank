@@ -635,7 +635,7 @@ If you know of relevant sources or websites, include them as citations.`;
     (req, res) => {
       // Successful authentication
       req.session.userId = (req.user as any).id;
-      res.redirect("/dashboard");
+      res.redirect("/app");
     }
   );
 
